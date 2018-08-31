@@ -25,7 +25,7 @@ func init() {
 			}
 			var last error
 			for _, arg := range args {
-				sr, err := storeAddr(ctx, s, arg)
+				sr, err := storeAddr(ctx, s, arg, false)
 				if err != nil {
 					last = err
 					fmt.Println(arg, err)
@@ -39,10 +39,16 @@ func init() {
 	Root.AddCommand(cmd)
 }
 
-func storeAddr(ctx context.Context, s *cas.Storage, addr string) (types.SizedRef, error) {
+func storeAddr(ctx context.Context, s *cas.Storage, addr string, index bool) (types.SizedRef, error) {
 	u, err := url.Parse(addr)
 	if err != nil {
 		return types.SizedRef{}, err
+	}
+	if index {
+		if u.Scheme != "" {
+			return s.IndexURLContent(ctx, addr)
+		}
+		return s.IndexFilePath(ctx, addr)
 	}
 	if u.Scheme != "" {
 		return s.StoreURLContent(ctx, addr)

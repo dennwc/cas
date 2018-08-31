@@ -29,7 +29,7 @@ func init() {
 				return err
 			}
 
-			sr, err := storeAddr(ctx, s, addr)
+			sr, err := storeAddr(ctx, s, addr, false)
 			if err != nil {
 				return err
 			}

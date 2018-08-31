@@ -144,10 +144,10 @@ func (r Ref) WithHash(h hash.Hash) Ref {
 	return r
 }
 
-func Hash(r io.Reader) (Ref, int64, error) {
+func Hash(r io.Reader) (SizedRef, error) {
 	ref := NewRef()
 	h := ref.Hash()
 	n, err := io.Copy(h, r)
 	ref = ref.WithHash(h)
-	return ref, n, err
+	return SizedRef{Ref: ref, Size: uint64(n)}, err
 }

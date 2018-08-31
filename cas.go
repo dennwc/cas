@@ -126,8 +126,16 @@ func (s *Storage) StoreSchema(ctx context.Context, o schema.Object) (SizedRef, e
 	return s.StoreBlob(ctx, exp, buf)
 }
 
-func (s *Storage) storeAsFile(ctx context.Context, r io.Reader, fi os.FileInfo) (*schema.DirEntry, error) {
-	sr, err := s.StoreBlob(ctx, types.Ref{}, r)
+func (s *Storage) storeAsFile(ctx context.Context, r io.Reader, fi os.FileInfo, index bool) (*schema.DirEntry, error) {
+	var (
+		sr  SizedRef
+		err error
+	)
+	if index {
+		sr, err = types.Hash(r)
+	} else {
+		sr, err = s.StoreBlob(ctx, types.Ref{}, r)
+	}
 	if err != nil {
 		return nil, err
 	} else if sr.Size != uint64(fi.Size()) {
@@ -140,12 +148,29 @@ func (s *Storage) storeAsFile(ctx context.Context, r io.Reader, fi os.FileInfo) 
 	return m, nil
 }
 
-func (s *Storage) StoreAsFile(ctx context.Context, r io.Reader, fi os.FileInfo) (SizedRef, error) {
-	m, err := s.storeAsFile(ctx, r, fi)
+func (s *Storage) IndexAsFile(ctx context.Context, r io.Reader, fi os.FileInfo) (SizedRef, error) {
+	m, err := s.storeAsFile(ctx, r, fi, true)
 	if err != nil {
 		return SizedRef{}, err
 	}
 	return s.StoreSchema(ctx, m)
+}
+
+func (s *Storage) StoreAsFile(ctx context.Context, r io.Reader, fi os.FileInfo) (SizedRef, error) {
+	m, err := s.storeAsFile(ctx, r, fi, false)
+	if err != nil {
+		return SizedRef{}, err
+	}
+	return s.StoreSchema(ctx, m)
+}
+
+func (s *Storage) IndexFilePath(ctx context.Context, path string) (SizedRef, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return SizedRef{}, nil
+	}
+	defer f.Close()
+	return s.IndexFile(ctx, f)
 }
 
 func (s *Storage) StoreFilePath(ctx context.Context, path string) (SizedRef, error) {
@@ -189,7 +214,7 @@ func (s *Storage) storeDirJoin(ctx context.Context, refs []Ref, list []schema.Jo
 	}
 	return sr, m, nil
 }
-func (s *Storage) storeDir(ctx context.Context, dir *os.File) (SizedRef, schema.DirEntry, error) {
+func (s *Storage) storeDir(ctx context.Context, dir *os.File, index bool) (SizedRef, schema.DirEntry, error) {
 	var base []schema.DirEntry
 	for {
 		buf, err := dir.Readdir(maxDirEntries)
@@ -207,7 +232,7 @@ func (s *Storage) storeDir(ctx context.Context, dir *os.File) (SizedRef, schema.
 				return SizedRef{}, schema.DirEntry{}, err
 			}
 			if fi.IsDir() {
-				sr, st, err := s.storeDir(ctx, f)
+				sr, st, err := s.storeDir(ctx, f, index)
 				f.Close()
 				if err != nil {
 					return SizedRef{}, schema.DirEntry{}, err
@@ -216,7 +241,7 @@ func (s *Storage) storeDir(ctx context.Context, dir *os.File) (SizedRef, schema.
 				st.Name = fi.Name()
 				base = append(base, st)
 			} else {
-				ent, err := s.storeAsFile(ctx, f, fi)
+				ent, err := s.storeAsFile(ctx, f, fi, index)
 				f.Close()
 				if err != nil {
 					return SizedRef{}, schema.DirEntry{}, err
@@ -292,31 +317,48 @@ func (s *Storage) storeDir(ctx context.Context, dir *os.File) (SizedRef, schema.
 	return sr, schema.DirEntry{Ref: sr.Ref, Count: top.Count, Size: top.Size}, nil
 }
 
-func (s *Storage) StoreFile(ctx context.Context, f *os.File) (SizedRef, error) {
+func (s *Storage) storeFile(ctx context.Context, f *os.File, index bool) (SizedRef, error) {
 	fi, err := f.Stat()
 	if err != nil {
 		return SizedRef{}, err
 	}
 	if fi.IsDir() {
-		sr, _, err := s.storeDir(ctx, f)
+		sr, _, err := s.storeDir(ctx, f, index)
 		return sr, err
 	}
 	_, err = f.Seek(0, io.SeekStart)
 	if err != nil {
 		return SizedRef{}, err
 	}
-	return s.StoreAsFile(ctx, f, fi)
+	ent, err := s.storeAsFile(ctx, f, fi, index)
+	return SizedRef{Ref: ent.Ref, Size: ent.Size}, err
 }
 
-func (s *Storage) StoreURLContent(ctx context.Context, url string) (SizedRef, error) {
+func (s *Storage) StoreFile(ctx context.Context, f *os.File) (SizedRef, error) {
+	return s.storeFile(ctx, f, false)
+}
+
+func (s *Storage) IndexFile(ctx context.Context, f *os.File) (SizedRef, error) {
+	return s.storeFile(ctx, f, true)
+}
+
+func (s *Storage) storeURLContent(ctx context.Context, url string, index bool) (SizedRef, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return SizedRef{}, err
 	}
-	return s.StoreHTTPContent(ctx, req)
+	return s.storeHTTPContent(ctx, req, index)
 }
 
-func (s *Storage) StoreHTTPContent(ctx context.Context, req *http.Request) (SizedRef, error) {
+func (s *Storage) StoreURLContent(ctx context.Context, url string) (SizedRef, error) {
+	return s.storeURLContent(ctx, url, false)
+}
+
+func (s *Storage) IndexURLContent(ctx context.Context, url string) (SizedRef, error) {
+	return s.storeURLContent(ctx, url, true)
+}
+
+func (s *Storage) storeHTTPContent(ctx context.Context, req *http.Request, index bool) (SizedRef, error) {
 	req = req.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -327,7 +369,12 @@ func (s *Storage) StoreHTTPContent(ctx context.Context, req *http.Request) (Size
 	if resp.StatusCode != http.StatusOK {
 		return SizedRef{}, fmt.Errorf("status: %v", resp.Status)
 	}
-	sr, err := s.StoreBlob(ctx, types.Ref{}, resp.Body)
+	var sr SizedRef
+	if index {
+		sr, err = types.Hash(resp.Body)
+	} else {
+		sr, err = s.StoreBlob(ctx, types.Ref{}, resp.Body)
+	}
 	if err != nil {
 		return SizedRef{}, err
 	}
@@ -347,4 +394,10 @@ func (s *Storage) StoreHTTPContent(ctx context.Context, req *http.Request) (Size
 		m.TS = &t
 	}
 	return s.StoreSchema(ctx, &m)
+}
+func (s *Storage) StoreHTTPContent(ctx context.Context, req *http.Request) (SizedRef, error) {
+	return s.storeHTTPContent(ctx, req, false)
+}
+func (s *Storage) IndexHTTPContent(ctx context.Context, req *http.Request) (SizedRef, error) {
+	return s.storeHTTPContent(ctx, req, true)
 }
