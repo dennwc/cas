@@ -55,6 +55,31 @@ type Storage struct {
 	st storage.Storage
 }
 
+func (s *Storage) SetPin(ctx context.Context, name string, ref types.Ref) error {
+	if name == "" {
+		name = DefaultPin
+	}
+	return s.st.SetPin(ctx, name, ref)
+}
+
+func (s *Storage) DeletePin(ctx context.Context, name string) error {
+	if name == "" {
+		name = DefaultPin
+	}
+	return s.st.DeletePin(ctx, name)
+}
+
+func (s *Storage) GetPin(ctx context.Context, name string) (types.Ref, error) {
+	if name == "" {
+		name = DefaultPin
+	}
+	return s.st.GetPin(ctx, name)
+}
+
+func (s *Storage) IteratePins(ctx context.Context) storage.PinIterator {
+	return s.st.IteratePins(ctx)
+}
+
 func (s *Storage) FetchBlob(ctx context.Context, ref Ref) (io.ReadCloser, uint64, error) {
 	if ref.Empty() {
 		// generate empty blobs

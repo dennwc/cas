@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"io"
 	"os"
 
@@ -47,7 +46,7 @@ func init() {
 }
 
 func dumpFile(w io.Writer, st *cas.Storage, ref cas.Ref) error {
-	rc, _, err := st.FetchBlob(context.Background(), ref)
+	rc, _, err := st.FetchBlob(cmdCtx, ref)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/spf13/cobra"
@@ -9,9 +10,11 @@ import (
 var (
 	Root = &cobra.Command{
 		Use:   "cas [command]",
-		Short: "Tools to manage Content Addressable Storage",
+		Short: "Content Addressable Storage",
 	}
 )
+
+var cmdCtx = context.Background()
 
 func main() {
 	if err := Root.Execute(); err != nil {

@@ -14,6 +14,7 @@ import (
 
 const (
 	dirBlobs = "blobs"
+	dirPins  = "pins"
 	dirTmp   = "tmp"
 )
 
@@ -24,6 +25,10 @@ func NewLocal(dir string, create bool) (Storage, error) {
 			return nil, err
 		}
 		err = os.MkdirAll(filepath.Join(dir, dirBlobs), 0755)
+		if err != nil {
+			return nil, err
+		}
+		err = os.MkdirAll(filepath.Join(dir, dirPins), 0755)
 		if err != nil {
 			return nil, err
 		}
@@ -153,6 +158,7 @@ func (it *dirIterator) Next() bool {
 	}
 	info := it.infos[0]
 	it.infos = it.infos[1:]
+	it.size = uint64(info.Size())
 	it.ref, it.err = types.ParseRef(info.Name())
 	if it.err != nil {
 		return false
@@ -173,6 +179,97 @@ func (it *dirIterator) Size() uint64 {
 }
 
 func (it *dirIterator) Close() error {
+	it.infos = []os.FileInfo{}
+	return nil
+}
+
+func (s *localStorage) pinPath(name string) string {
+	return filepath.Join(s.dir, dirPins, name)
+}
+
+func (s *localStorage) SetPin(ctx context.Context, name string, ref types.Ref) error {
+	return ioutil.WriteFile(s.pinPath(name), []byte(ref.String()), 0644)
+}
+
+func (s *localStorage) DeletePin(ctx context.Context, name string) error {
+	return os.Remove(s.pinPath(name))
+}
+
+func (s *localStorage) GetPin(ctx context.Context, name string) (types.Ref, error) {
+	data, err := ioutil.ReadFile(s.pinPath(name))
+	if os.IsNotExist(err) {
+		return types.Ref{}, ErrNotFound
+	} else if err != nil {
+		return types.Ref{}, err
+	}
+	return types.ParseRef(string(data))
+}
+
+func (s *localStorage) IteratePins(ctx context.Context) PinIterator {
+	return &pinIterator{s: s, dir: filepath.Join(s.dir, dirPins)}
+}
+
+type pinIterator struct {
+	s   *localStorage
+	dir string
+
+	err   error
+	infos []os.FileInfo
+	ref   types.Ref
+	name  string
+}
+
+func (it *pinIterator) Next() bool {
+	it.ref, it.name = types.Ref{}, ""
+	if it.err != nil {
+		return false
+	}
+	if it.infos == nil {
+		d, err := os.Open(it.dir)
+		if os.IsNotExist(err) {
+			it.infos = []os.FileInfo{}
+			return false
+		} else if err != nil {
+			it.err = err
+			return false
+		}
+		infos, err := d.Readdir(-1)
+		d.Close()
+		if err != nil {
+			it.err = err
+			return false
+		}
+		sort.Slice(infos, func(i, j int) bool {
+			return infos[i].Name() < infos[j].Name()
+		})
+		it.infos = infos
+	}
+	if len(it.infos) == 0 {
+		return false
+	}
+	info := it.infos[0]
+	it.infos = it.infos[1:]
+	it.name = info.Name()
+	it.ref, it.err = types.ParseRef(info.Name())
+	if it.err != nil {
+		return false
+	}
+	return true
+}
+
+func (it *pinIterator) Err() error {
+	return it.err
+}
+
+func (it *pinIterator) Ref() types.Ref {
+	return it.ref
+}
+
+func (it *pinIterator) Name() string {
+	return it.name
+}
+
+func (it *pinIterator) Close() error {
 	it.infos = []os.FileInfo{}
 	return nil
 }
