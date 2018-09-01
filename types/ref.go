@@ -12,8 +12,11 @@ import (
 )
 
 const (
+	DefaultHash = hashSha256Name
+)
+
+const (
 	useBase32      = false
-	defaultHash    = hashSha256Name
 	hashSha256Name = "sha256"
 	hashBufSize    = sha256.Size
 )
@@ -69,7 +72,7 @@ func MustParseRef(s string) Ref {
 }
 
 func NewRef() Ref {
-	return Ref{name: defaultHash}
+	return Ref{name: DefaultHash}
 }
 
 func BytesRef(p []byte) Ref {
@@ -121,13 +124,16 @@ func (r Ref) Zero() bool {
 	return r == Ref{}
 }
 func (r Ref) Empty() bool {
-	return r.name == defaultHash && r == emptyRef
+	return r.name == DefaultHash && r == emptyRef
 }
 func (r Ref) String() string {
 	return r.name + ":" + hashTextEncode(r.data[:])
 }
 func (r Ref) GoString() string {
 	return fmt.Sprintf("types.MustParseRef(%q)", r.String())
+}
+func (r Ref) Name() string {
+	return r.name
 }
 func (r Ref) Hash() hash.Hash {
 	switch r.name {

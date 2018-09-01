@@ -65,6 +65,7 @@ func (s *Storage) storeAsFile(ctx context.Context, fd FileDesc, indexOnly bool) 
 			if l, ok := s.st.(*storage.LocalStorage); ok {
 				// clone file, if possible
 				if sr, err := l.ImportFile(ctx, lf.path); err == nil {
+					fd.SetRef(sr)
 					return &schema.DirEntry{
 						Ref: sr.Ref, Size: sr.Size,
 						Name: fd.Name(),
@@ -95,6 +96,7 @@ func (s *Storage) storeAsFile(ctx context.Context, fd FileDesc, indexOnly bool) 
 	} else if sr.Size != uint64(xr.Size) {
 		return nil, fmt.Errorf("file changed while writing it")
 	}
+	fd.SetRef(sr)
 	err = fw.Commit()
 	if err != nil {
 		return nil, err
@@ -301,15 +303,18 @@ func (f *localFile) Open() (io.ReadCloser, SizedRef, error) {
 		return nil, SizedRef{}, err
 	}
 	f.fi = st
-	// TODO: read ref from xattr, verify by mtime and size
-	return fd, SizedRef{Size: uint64(st.Size())}, nil
+	sr := SizedRef{Size: uint64(st.Size())}
+	if xr, err := Stat(context.Background(), f.path); err == nil && xr.Size == sr.Size {
+		sr.Ref = xr.Ref
+	}
+	return fd, sr, nil
 }
 
 func (f *localFile) SetRef(ref types.SizedRef) {
-	if uint64(f.fi.Size()) != ref.Size {
+	if f.fi == nil || uint64(f.fi.Size()) != ref.Size {
 		// this is the only case that we can reject directly
 		// all other checks happen at read time
 		return
 	}
-	// TODO: write ref, size and saved mtime to xattr
+	_ = SaveRef(context.Background(), f.path, f.fi, ref.Ref)
 }
