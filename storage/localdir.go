@@ -2,13 +2,13 @@ package storage
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 
+	"github.com/dennwc/cas/cow"
 	"github.com/dennwc/cas/types"
 )
 
@@ -16,9 +16,11 @@ const (
 	dirBlobs = "blobs"
 	dirPins  = "pins"
 	dirTmp   = "tmp"
+
+	roPerm = 0444
 )
 
-func NewLocal(dir string, create bool) (Storage, error) {
+func NewLocal(dir string, create bool) (*LocalStorage, error) {
 	_, err := os.Stat(dir)
 	if os.IsNotExist(err) {
 		if !create {
@@ -40,23 +42,23 @@ func NewLocal(dir string, create bool) (Storage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &localStorage{dir: dir}, nil
+	return &LocalStorage{dir: dir}, nil
 }
 
-type localStorage struct {
+type LocalStorage struct {
 	dir string
 }
 
-func (s *localStorage) tmpFile() (*os.File, error) {
+func (s *LocalStorage) tmpFile() (*os.File, error) {
 	dir := filepath.Join(s.dir, dirTmp)
 	return ioutil.TempFile(dir, "")
 }
 
-func (s *localStorage) blobPath(ref types.Ref) string {
+func (s *LocalStorage) blobPath(ref types.Ref) string {
 	return filepath.Join(s.dir, dirBlobs, ref.String())
 }
 
-func (s *localStorage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
+func (s *LocalStorage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
 	fi, err := os.Stat(s.blobPath(ref))
 	if err != nil {
 		return 0, err
@@ -64,7 +66,7 @@ func (s *localStorage) StatBlob(ctx context.Context, ref types.Ref) (uint64, err
 	return uint64(fi.Size()), nil
 }
 
-func (s *localStorage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
+func (s *LocalStorage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
 	f, err := os.Open(s.blobPath(ref))
 	if os.IsNotExist(err) {
 		return nil, 0, ErrNotFound
@@ -79,47 +81,134 @@ func (s *localStorage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadClo
 	return f, uint64(fi.Size()), nil
 }
 
-func (s *localStorage) StoreBlob(ctx context.Context, exp types.Ref, r io.Reader) (types.SizedRef, error) {
+func (s *LocalStorage) ImportFile(ctx context.Context, path string) (types.SizedRef, error) {
+	// first, use CoW to copy the file into temp directory
 	f, err := s.tmpFile()
 	if err != nil {
-		return types.SizedRef{}, fmt.Errorf("cannot create temp file: %v", err)
+		return types.SizedRef{}, err
 	}
+	f.Close()
 	name := f.Name()
-
-	ref := types.NewRef()
-	h := ref.Hash()
-	n, err := io.Copy(io.MultiWriter(f, h), r)
+	if err = cow.Copy(ctx, name, path); err != nil {
+		os.Remove(name)
+		return types.SizedRef{}, err
+	}
+	// calculate the hash and move the file into the blobs directory
+	if err := os.Chmod(name, roPerm); err != nil {
+		os.Remove(name)
+		return types.SizedRef{}, err
+	}
+	f, err = os.Open(name)
 	if err != nil {
-		f.Close()
-		os.Remove(name)
-		return types.SizedRef{}, fmt.Errorf("cannot write file: %v", err)
-	}
-	if err = f.Close(); err != nil {
 		os.Remove(name)
 		return types.SizedRef{}, err
 	}
-	ref = ref.WithHash(h)
-	if !exp.Zero() && ref != exp {
-		os.Remove(name)
-		return types.SizedRef{}, ErrRefMissmatch{Exp: exp, Got: ref}
-	}
-	if err = os.Rename(name, s.blobPath(ref)); err != nil {
+	sr, err := types.Hash(f)
+	f.Close()
+	if err != nil {
 		os.Remove(name)
 		return types.SizedRef{}, err
 	}
-	name = s.blobPath(ref)
-	if err = os.Chmod(name, 0444); err != nil {
+	if err = os.Rename(name, s.blobPath(sr.Ref)); err != nil {
+		os.Remove(name)
 		return types.SizedRef{}, err
 	}
-	return types.SizedRef{Ref: ref, Size: uint64(n)}, nil
+	return sr, nil
 }
 
-func (s *localStorage) IterateBlobs(ctx context.Context) Iterator {
+func (s *LocalStorage) BeginBlob(ctx context.Context) (BlobWriter, error) {
+	f, err := s.tmpFile()
+	if err != nil {
+		return nil, err
+	}
+	if t, ok := ctx.Deadline(); ok {
+		f.SetWriteDeadline(t)
+	}
+	return &blobWriter{s: s, ctx: ctx, f: f, hw: Hash()}, nil
+}
+
+type blobWriter struct {
+	s   *LocalStorage
+	ctx context.Context
+	f   *os.File
+	sr  types.SizedRef
+	hw  BlobWriter
+}
+
+func (w *blobWriter) Write(p []byte) (int, error) {
+	_, err := w.hw.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	if w.f == nil {
+		return 0, ErrBlobCompleted
+	}
+	return w.f.Write(p)
+}
+
+func (w *blobWriter) Complete() (types.SizedRef, error) {
+	sr, err := w.hw.Complete()
+	if err != nil {
+		return types.SizedRef{}, err
+	}
+	if !w.sr.Ref.Zero() {
+		return sr, nil
+	}
+	w.sr = sr
+	err = w.f.Close()
+	if err != nil {
+		os.Remove(w.f.Name())
+		w.f = nil
+	}
+	return sr, err
+}
+
+func (w *blobWriter) Close() error {
+	if err := w.hw.Close(); err != nil {
+		return err
+	}
+	if w.f == nil {
+		return nil
+	}
+	w.f.Close()
+	err := os.Remove(w.f.Name())
+	w.f = nil
+	return err
+}
+
+func (w *blobWriter) Commit() error {
+	if err := w.hw.Commit(); err != nil {
+		return err
+	}
+	if w.f == nil {
+		return ErrBlobDiscarded
+	}
+	if w.sr.Ref.Zero() {
+		if _, err := w.Complete(); err != nil {
+			return err
+		}
+	}
+	// file already closed, we only need a name now
+	name := w.f.Name()
+	w.f = nil
+	if err := os.Chmod(name, roPerm); err != nil {
+		os.Remove(name)
+		return err
+	}
+	path := w.s.blobPath(w.sr.Ref)
+	if err := os.Rename(name, path); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return nil
+}
+
+func (s *LocalStorage) IterateBlobs(ctx context.Context) Iterator {
 	return &dirIterator{s: s, dir: filepath.Join(s.dir, dirBlobs)}
 }
 
 type dirIterator struct {
-	s   *localStorage
+	s   *LocalStorage
 	dir string
 
 	err   error
@@ -183,19 +272,19 @@ func (it *dirIterator) Close() error {
 	return nil
 }
 
-func (s *localStorage) pinPath(name string) string {
+func (s *LocalStorage) pinPath(name string) string {
 	return filepath.Join(s.dir, dirPins, name)
 }
 
-func (s *localStorage) SetPin(ctx context.Context, name string, ref types.Ref) error {
+func (s *LocalStorage) SetPin(ctx context.Context, name string, ref types.Ref) error {
 	return ioutil.WriteFile(s.pinPath(name), []byte(ref.String()), 0644)
 }
 
-func (s *localStorage) DeletePin(ctx context.Context, name string) error {
+func (s *LocalStorage) DeletePin(ctx context.Context, name string) error {
 	return os.Remove(s.pinPath(name))
 }
 
-func (s *localStorage) GetPin(ctx context.Context, name string) (types.Ref, error) {
+func (s *LocalStorage) GetPin(ctx context.Context, name string) (types.Ref, error) {
 	data, err := ioutil.ReadFile(s.pinPath(name))
 	if os.IsNotExist(err) {
 		return types.Ref{}, ErrNotFound
@@ -205,12 +294,12 @@ func (s *localStorage) GetPin(ctx context.Context, name string) (types.Ref, erro
 	return types.ParseRef(string(data))
 }
 
-func (s *localStorage) IteratePins(ctx context.Context) PinIterator {
+func (s *LocalStorage) IteratePins(ctx context.Context) PinIterator {
 	return &pinIterator{s: s, dir: filepath.Join(s.dir, dirPins)}
 }
 
 type pinIterator struct {
-	s   *localStorage
+	s   *LocalStorage
 	dir string
 
 	err   error

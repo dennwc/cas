@@ -3,7 +3,6 @@ package cas
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 
@@ -89,22 +88,48 @@ func (s *Storage) StatBlob(ctx context.Context, ref Ref) (uint64, error) {
 	return s.st.StatBlob(ctx, ref)
 }
 
-func (s *Storage) StoreBlob(ctx context.Context, exp Ref, r io.Reader) (SizedRef, error) {
-	if exp.Empty() {
-		// do not store empty blobs - we can generate them
-		var b [1]byte
-		_, err := r.Read(b[:])
-		if err == io.EOF {
-			return SizedRef{Ref: exp, Size: 0}, nil
-		}
-		return SizedRef{}, fmt.Errorf("expected empty blob")
+func (s *Storage) BeginBlob(ctx context.Context) (storage.BlobWriter, error) {
+	return s.st.BeginBlob(ctx)
+}
+
+func (s *Storage) completeBlob(ctx context.Context, w storage.BlobWriter, exp Ref) (SizedRef, error) {
+	defer w.Close()
+	sr, err := w.Complete()
+	if err != nil {
+		return SizedRef{}, err
 	}
+	if !exp.Zero() && exp != sr.Ref {
+		return SizedRef{}, storage.ErrRefMissmatch{Exp: exp, Got: sr.Ref}
+	}
+	if sr.Ref.Empty() {
+		// do not store empty blobs - we can generate them
+		w.Close()
+		return SizedRef{Ref: exp, Size: 0}, nil
+	}
+	err = w.Commit()
+	if err != nil {
+		return SizedRef{}, err
+	}
+	return sr, nil
+}
+
+func (s *Storage) StoreBlob(ctx context.Context, exp Ref, r io.Reader) (SizedRef, error) {
 	if !exp.Zero() {
 		if sz, err := s.StatBlob(ctx, exp); err == nil {
+			// TODO: hash the reader to make sure that caller provided the right file?
 			return SizedRef{Ref: exp, Size: sz}, nil
 		}
 	}
-	return s.st.StoreBlob(ctx, exp, r)
+	w, err := s.st.BeginBlob(ctx)
+	if err != nil {
+		return SizedRef{}, err
+	}
+	defer w.Close()
+	_, err = io.Copy(w, r)
+	if err != nil {
+		return SizedRef{}, err
+	}
+	return s.completeBlob(ctx, w, exp)
 }
 
 func (s *Storage) StoreSchema(ctx context.Context, o schema.Object) (SizedRef, error) {

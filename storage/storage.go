@@ -9,7 +9,11 @@ import (
 	"github.com/dennwc/cas/types"
 )
 
-var ErrNotFound = errors.New("blob: not found")
+var (
+	ErrNotFound      = errors.New("blob: not found")
+	ErrBlobDiscarded = errors.New("blob was discarded")
+	ErrBlobCompleted = errors.New("blob was completed")
+)
 
 type ErrRefMissmatch struct {
 	Exp, Got types.Ref
@@ -22,8 +26,21 @@ func (e ErrRefMissmatch) Error() string {
 type BlobStorage interface {
 	StatBlob(ctx context.Context, ref types.Ref) (uint64, error)
 	FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error)
-	StoreBlob(ctx context.Context, exp types.Ref, r io.Reader) (types.SizedRef, error)
+	BeginBlob(ctx context.Context) (BlobWriter, error)
 	IterateBlobs(ctx context.Context) Iterator
+}
+
+type BlobWriter interface {
+	io.Writer
+	// Complete returns the hash and size of the written blob.
+	// Use should either Close the writer to discard the blob or Commit to store the blob.
+	// All writes after this call will fail.
+	Complete() (types.SizedRef, error)
+	// Close will discard the blob.
+	Close() error
+	// Commit stores the blob and closes it automatically.
+	// It will call Complete if it was not called before.
+	Commit() error
 }
 
 type PinStorage interface {

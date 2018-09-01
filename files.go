@@ -9,7 +9,7 @@ import (
 	"sort"
 
 	"github.com/dennwc/cas/schema"
-	"github.com/dennwc/cas/types"
+	"github.com/dennwc/cas/storage"
 )
 
 const (
@@ -17,23 +17,63 @@ const (
 )
 
 func (s *Storage) storeAsFile(ctx context.Context, r io.Reader, fi os.FileInfo, index bool) (*schema.DirEntry, error) {
-	var (
-		sr  SizedRef
-		err error
-	)
+	var fw storage.BlobWriter
 	if index {
-		sr, err = types.Hash(r)
+		fw = storage.Hash()
 	} else {
-		sr, err = s.StoreBlob(ctx, types.Ref{}, r)
+		var err error
+		fw, err = s.BeginBlob(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
+	defer fw.Close()
+
+	name := filepath.Base(fi.Name())
+
+	iw := s.indexFileByExt(ctx, name)
+	if iw != nil {
+		defer iw.Close()
+	}
+
+	writers := []io.Writer{fw}
+	if iw != nil {
+		writers = append(writers, iw)
+	}
+	var w io.Writer
+	if len(writers) == 1 {
+		w = writers[0]
+	} else {
+		w = io.MultiWriter(writers...)
+	}
+
+	n, err := io.Copy(w, r)
+	if err != nil {
+		return nil, err
+	} else if uint64(n) != uint64(fi.Size()) {
+		return nil, fmt.Errorf("file changed while writing it")
+	}
+	sr, err := fw.Complete()
 	if err != nil {
 		return nil, err
 	} else if sr.Size != uint64(fi.Size()) {
 		return nil, fmt.Errorf("file changed while writing it")
 	}
+	err = fw.Commit()
+	if err != nil {
+		return nil, err
+	}
 	m := &schema.DirEntry{
 		Ref: sr.Ref, Size: sr.Size,
-		Name: filepath.Base(fi.Name()),
+		Name: name,
+	}
+	if iw != nil {
+		// best effort, ignore indexing errors
+		if isr, err := iw.Complete(); err == nil {
+			err = iw.Commit()
+			_ = err
+			_, _ = s.storeIndexByExt(ctx, name, sr, isr)
+		}
 	}
 	return m, nil
 }

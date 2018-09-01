@@ -6,6 +6,7 @@ func init() {
 	Register(&Directory{})
 	Register(&JoinDirectories{})
 	Register(&DirEntry{})
+	Register(&Compressed{})
 }
 
 type Directory struct {
@@ -39,4 +40,14 @@ type DirEntry struct {
 
 func (d *DirEntry) References() []types.Ref {
 	return []types.Ref{d.Ref}
+}
+
+type Compressed struct {
+	Algo string         `json:"algo"`
+	Arch types.SizedRef `json:"arch"`
+	Ref  types.SizedRef `json:"ref"`
+}
+
+func (c *Compressed) References() []types.Ref {
+	return []types.Ref{c.Arch.Ref, c.Ref.Ref}
 }
