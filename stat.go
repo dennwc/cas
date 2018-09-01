@@ -2,15 +2,13 @@ package cas
 
 import (
 	"context"
-	"encoding/binary"
 	"os"
-	"time"
 
 	"github.com/dennwc/cas/types"
-	"github.com/pkg/xattr"
+	"github.com/dennwc/cas/xattr"
 )
 
-const xattrNS = "user.cas."
+const xattrNS = "cas."
 
 // Stat returns the size of the file and the ref if it's written into the metadata and considered valid.
 func Stat(ctx context.Context, path string) (SizedRef, error) {
@@ -19,32 +17,23 @@ func Stat(ctx context.Context, path string) (SizedRef, error) {
 		return SizedRef{}, err
 	}
 	sr := SizedRef{Size: uint64(st.Size())}
-	data, err := xattr.Get(path, xattrNS+"hash")
-	if err != nil || len(data) == 0 {
+	sref, err := xattr.GetString(path, xattrNS+"hash")
+	if err != nil || len(sref) == 0 {
 		// fallback to size only
 		return sr, nil
 	}
-	ref, err := types.ParseRef(string(data))
+	ref, err := types.ParseRef(sref)
 	if err != nil {
 		return sr, nil
 	}
 	// to verify that this hash is correct, read an old size and mtime
-	data, err = xattr.Get(path, xattrNS+"size")
-	if err != nil || len(data) != 8 {
-		return sr, nil
-	}
-	size := binary.LittleEndian.Uint64(data)
-	if size != uint64(st.Size()) {
+	size, err := xattr.GetUint(path, xattrNS+"size")
+	if err != nil || size != uint64(st.Size()) {
 		// TODO: remove xattr?
 		return sr, nil
 	}
-	data, err = xattr.Get(path, xattrNS+"mtime")
-	if err != nil || len(data) != 8 {
-		return sr, nil
-	}
-	nanos := binary.LittleEndian.Uint64(data)
-	mtime := time.Unix(0, int64(nanos)).UTC()
-	if !mtime.Equal(st.ModTime()) {
+	mtime, err := xattr.GetTime(path, xattrNS+"mtime")
+	if err != nil || !mtime.Equal(st.ModTime()) {
 		// TODO: remove xattr?
 		return sr, nil
 	}
@@ -61,20 +50,16 @@ func SaveRef(ctx context.Context, path string, fi os.FileInfo, ref types.Ref) er
 		// file was already modified
 		return nil
 	}
-	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:], uint64(fi.Size()))
-	err := xattr.Set(path, xattrNS+"size", buf[:])
+	err := xattr.SetUint(path, xattrNS+"size", uint64(fi.Size()))
 	if err != nil {
 		return err
 	}
 	mtime := fi.ModTime()
-	nanos := mtime.UnixNano()
-	binary.LittleEndian.PutUint64(buf[:], uint64(nanos))
-	err = xattr.Set(path, xattrNS+"mtime", buf[:])
+	err = xattr.SetTime(path, xattrNS+"mtime", mtime)
 	if err != nil {
 		return err
 	}
-	err = xattr.Set(path, xattrNS+"hash", []byte(ref.String()))
+	err = xattr.SetString(path, xattrNS+"hash", ref.String())
 	if err != nil {
 		return err
 	}
