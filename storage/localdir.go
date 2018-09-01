@@ -250,7 +250,12 @@ func (it *pinIterator) Next() bool {
 	info := it.infos[0]
 	it.infos = it.infos[1:]
 	it.name = info.Name()
-	it.ref, it.err = types.ParseRef(info.Name())
+	data, err := ioutil.ReadFile(filepath.Join(it.dir, info.Name()))
+	if err != nil {
+		it.err = err
+		return false
+	}
+	it.ref, it.err = types.ParseRef(string(data))
 	if it.err != nil {
 		return false
 	}
