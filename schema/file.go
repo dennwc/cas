@@ -7,6 +7,7 @@ func init() {
 	Register(&JoinDirectories{})
 	Register(&DirEntry{})
 	Register(&Compressed{})
+	Register(&Multipart{})
 }
 
 type Directory struct {
@@ -50,4 +51,18 @@ type Compressed struct {
 
 func (c *Compressed) References() []types.Ref {
 	return []types.Ref{c.Arch.Ref, c.Ref.Ref}
+}
+
+type Multipart struct {
+	Ref   types.Ref        `json:"ref,omitempty"`
+	Parts []types.SizedRef `json:"parts"`
+}
+
+func (m *Multipart) References() []types.Ref {
+	refs := make([]types.Ref, 0, len(m.Parts)+1)
+	refs = append(refs, m.Ref)
+	for _, sr := range m.Parts {
+		refs = append(refs, sr.Ref)
+	}
+	return refs
 }

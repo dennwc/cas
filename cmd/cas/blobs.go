@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -43,6 +44,25 @@ func init() {
 	}
 	cmd.AddCommand(getCmd)
 
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "list blob(s) stored in CAS",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			st, err := cas.Open(cas.OpenOptions{
+				Dir: casDir, Create: false,
+			})
+			if err != nil {
+				return err
+			}
+			it := st.IterateBlobs(cmdCtx)
+			defer it.Close()
+			for it.Next() {
+				fmt.Println(it.Ref(), it.Size())
+			}
+			return it.Err()
+		},
+	}
+	cmd.AddCommand(listCmd)
 }
 
 func dumpFile(w io.Writer, st *cas.Storage, ref cas.Ref) error {

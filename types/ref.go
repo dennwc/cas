@@ -38,6 +38,9 @@ func hashTextDecode(s string) ([]byte, error) {
 }
 
 func ParseRef(s string) (Ref, error) {
+	if len(s) == 0 {
+		return Ref{}, nil
+	}
 	i := strings.Index(s, ":")
 	if i < 0 {
 		return Ref{}, fmt.Errorf("not a ref")
@@ -127,6 +130,9 @@ func (r Ref) Empty() bool {
 	return r.name == DefaultHash && r == emptyRef
 }
 func (r Ref) String() string {
+	if r.Zero() {
+		return ""
+	}
 	return r.name + ":" + hashTextEncode(r.data[:])
 }
 func (r Ref) GoString() string {

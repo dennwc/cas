@@ -29,6 +29,8 @@ const (
 )
 
 type Object interface {
+	// TODO: split into DependsOn and Describes
+
 	References() []types.Ref
 }
 
@@ -100,7 +102,7 @@ func IsSchema(p []byte) bool {
 	return string(p[:MagicSize]) == magic
 }
 
-func Decode(r io.Reader) (Object, error) {
+func checkSchema(r io.Reader) (io.Reader, error) {
 	m := make([]byte, MagicSize)
 	_, err := io.ReadFull(r, m)
 	if err != nil {
@@ -109,7 +111,15 @@ func Decode(r io.Reader) (Object, error) {
 	if !IsSchema(m) {
 		return nil, ErrNotSchema
 	}
-	r = io.MultiReader(bytes.NewReader(m), r)
+	return io.MultiReader(bytes.NewReader(m), r), nil
+}
+
+func Decode(r io.Reader) (Object, error) {
+	var err error
+	r, err = checkSchema(r)
+	if err != nil {
+		return nil, err
+	}
 	obj, err := decode(r)
 	if err != nil {
 		return nil, fmt.Errorf("cannot decode schema object: %v", err)
@@ -118,20 +128,11 @@ func Decode(r io.Reader) (Object, error) {
 }
 
 func decode(r io.Reader) (Object, error) {
-	r = io.LimitReader(r, maxSize)
-	data, err := ioutil.ReadAll(r)
+	typ, data, err := decodeType(r)
 	if err != nil {
 		return nil, err
-	} else if len(data) == maxSize {
-		return nil, fmt.Errorf("schema object is too large")
 	}
-	var h struct {
-		Type string `json:"@type"`
-	}
-	if err := json.Unmarshal(data, &h); err != nil {
-		return nil, err
-	}
-	obj, err := NewType(h.Type)
+	obj, err := NewType(typ)
 	if err != nil {
 		return nil, err
 	}
@@ -139,4 +140,31 @@ func decode(r io.Reader) (Object, error) {
 		return nil, err
 	}
 	return obj, nil
+}
+
+func decodeType(r io.Reader) (string, []byte, error) {
+	r = io.LimitReader(r, maxSize)
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		return "", nil, err
+	} else if len(data) == maxSize {
+		return "", nil, fmt.Errorf("schema object is too large")
+	}
+	var h struct {
+		Type string `json:"@type"`
+	}
+	if err := json.Unmarshal(data, &h); err != nil {
+		return "", nil, err
+	}
+	return h.Type, data, nil
+}
+
+func DecodeType(r io.Reader) (string, error) {
+	var err error
+	r, err = checkSchema(r)
+	if err != nil {
+		return "", err
+	}
+	typ, _, err := decodeType(r)
+	return typ, err
 }
