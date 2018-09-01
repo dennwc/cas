@@ -270,3 +270,11 @@ func (s *Storage) StoreFile(ctx context.Context, f *os.File) (SizedRef, error) {
 func (s *Storage) IndexFile(ctx context.Context, f *os.File) (SizedRef, error) {
 	return s.storeFile(ctx, f, true)
 }
+
+func (s *Storage) ImportFilePath(ctx context.Context, path string) (SizedRef, error) {
+	l, ok := s.st.(*storage.LocalStorage)
+	if !ok {
+		return SizedRef{}, fmt.Errorf("storage %T doesn't support importing", s.st)
+	}
+	return l.ImportFile(ctx, path)
+}
