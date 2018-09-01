@@ -9,13 +9,17 @@ import (
 	"sort"
 
 	"github.com/dennwc/cas/cow"
+	"github.com/dennwc/cas/schema"
 	"github.com/dennwc/cas/types"
+	"github.com/dennwc/cas/xattr"
 )
 
 const (
 	dirBlobs = "blobs"
 	dirPins  = "pins"
 	dirTmp   = "tmp"
+
+	xattrNS = "cas."
 
 	roPerm = 0444
 )
@@ -366,4 +370,155 @@ func (it *pinIterator) Name() string {
 func (it *pinIterator) Close() error {
 	it.infos = []os.FileInfo{}
 	return nil
+}
+
+func (s *LocalStorage) IterateSchema(ctx context.Context, typs ...string) SchemaIterator {
+	var filter map[string]struct{}
+	if len(typs) != 0 {
+		filter = make(map[string]struct{})
+		for _, v := range typs {
+			filter[v] = struct{}{}
+		}
+	}
+	return &schemaIterator{s: s, typs: filter, dir: filepath.Join(s.dir, dirBlobs)}
+}
+
+func (s *LocalStorage) Reindex(ctx context.Context, force bool) error {
+	it := &schemaIterator{s: s, force: force, dir: filepath.Join(s.dir, dirBlobs)}
+	defer it.Close()
+	for it.Next() {
+		_ = it.Type()
+	}
+	return it.Err()
+}
+
+type schemaIterator struct {
+	s     *LocalStorage
+	typs  map[string]struct{}
+	dir   string
+	force bool
+
+	d   *os.File
+	buf []string
+
+	typ string
+	ref types.SizedRef
+	err error
+}
+
+func (it *schemaIterator) Next() bool {
+	if it.d == nil {
+		d, err := os.Open(it.dir)
+		if os.IsNotExist(err) {
+			return false
+		} else if err != nil {
+			it.err = err
+			return false
+		}
+		it.d = d
+	}
+	for {
+		if len(it.buf) == 0 {
+			buf, err := it.d.Readdirnames(1024)
+			if err == io.EOF {
+				return false
+			} else if err != nil {
+				it.err = err
+				return false
+			}
+			it.buf = buf
+		}
+		for len(it.buf) > 0 {
+			name := it.buf[0]
+			it.buf = it.buf[1:]
+
+			typ, err := it.getType(name)
+			if err != nil {
+				it.err = err
+				return false
+			} else if typ == "" {
+				continue
+			}
+			if it.typs != nil {
+				if _, ok := it.typs[typ]; !ok {
+					continue
+				}
+			}
+			ref, err := types.ParseRef(name)
+			if err != nil {
+				it.err = err
+				return false
+			}
+			st, err := os.Stat(filepath.Join(it.dir, name))
+			if os.IsNotExist(err) {
+				continue
+			} else if err != nil {
+				it.err = err
+				return false
+			}
+			it.typ, it.ref.Ref, it.ref.Size = typ, ref, uint64(st.Size())
+			return true
+		}
+	}
+}
+
+func (it *schemaIterator) getType(name string) (string, error) {
+	path := filepath.Join(it.dir, name)
+	const attr = xattrNS + "schema.type"
+	if !it.force {
+		// first try to read cached xattr
+		typ, err := xattr.GetString(path, attr)
+		if err == nil {
+			return typ, nil
+		} else if err != nil && err != xattr.ErrNotSet {
+			return "", err
+		}
+	}
+	// not set
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	typ, err := schema.DecodeType(f)
+	if err == schema.ErrNotSchema || err == nil {
+		// files are set to RO so we need to set them to RW and then reset back
+		err = os.Chmod(path, 0644)
+		if err == nil {
+			err = xattr.SetString(path, attr, typ)
+			_ = os.Chmod(path, roPerm)
+		}
+	}
+	if err != nil {
+		return "", err
+	}
+	return typ, nil
+}
+
+func (it *schemaIterator) Err() error {
+	return it.err
+}
+
+func (it *schemaIterator) Close() error {
+	if it.d != nil {
+		it.d.Close()
+		it.d = nil
+	}
+	it.buf = nil
+	return it.err
+}
+
+func (it *schemaIterator) Ref() types.Ref {
+	return it.ref.Ref
+}
+
+func (it *schemaIterator) Size() uint64 {
+	return it.ref.Size
+}
+
+func (it *schemaIterator) Type() string {
+	return it.typ
 }

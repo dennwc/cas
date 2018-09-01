@@ -30,6 +30,16 @@ type BlobStorage interface {
 	IterateBlobs(ctx context.Context) Iterator
 }
 
+type BlobIndexer interface {
+	IterateSchema(ctx context.Context, typs ...string) SchemaIterator
+	Reindex(ctx context.Context, force bool) error
+}
+
+type SchemaIterator interface {
+	Iterator
+	Type() string
+}
+
 type BlobWriter interface {
 	io.Writer
 	// Complete returns the hash and size of the written blob.
@@ -53,6 +63,7 @@ type PinStorage interface {
 type Storage interface {
 	BlobStorage
 	PinStorage
+	BlobIndexer
 }
 
 type BaseIterator interface {

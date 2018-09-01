@@ -2,6 +2,7 @@ package xattr
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,8 +13,16 @@ const userNS = "user."
 
 var endian = binary.LittleEndian
 
+var ErrNotSet = errors.New("xattr not set")
+
 func Get(path, name string) ([]byte, error) {
-	return xattr.Get(path, userNS+name)
+	data, err := xattr.Get(path, userNS+name)
+	if e, ok := err.(*xattr.Error); ok && e.Err == xattr.ENOATTR {
+		return nil, ErrNotSet
+	} else if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func GetString(path, name string) (string, error) {
