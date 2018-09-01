@@ -89,7 +89,7 @@ func (s *LocalStorage) ImportFile(ctx context.Context, path string) (types.Sized
 	}
 	f.Close()
 	name := f.Name()
-	if err = cow.Copy(ctx, name, path); err != nil {
+	if err = cow.Clone(ctx, name, path); err != nil {
 		os.Remove(name)
 		return types.SizedRef{}, err
 	}
