@@ -1,24 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/dennwc/cas"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	"github.com/dennwc/cas"
 )
 
 func init() {
 	cmd := &cobra.Command{
 		Use:   "index",
 		Short: "index the URL or file to the content-addressable storage",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmdCtx
-			s, err := cas.Open(cas.OpenOptions{
-				Dir: casDir, Create: true,
-			})
-			if err != nil {
-				return err
-			}
+		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, _ *pflag.FlagSet, args []string) error {
 			var last error
 			for _, arg := range args {
 				sr, err := storeAddr(ctx, s, arg, true)
@@ -30,7 +26,7 @@ func init() {
 				}
 			}
 			return last
-		},
+		}),
 	}
 	Root.AddCommand(cmd)
 }

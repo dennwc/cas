@@ -5,24 +5,18 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/dennwc/cas/types"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dennwc/cas"
-	"github.com/spf13/cobra"
+	"github.com/dennwc/cas/types"
 )
 
 func init() {
 	cmd := &cobra.Command{
 		Use:   "fetch",
 		Short: "store the URL or file in the content-addressable storage",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmdCtx
-			s, err := cas.Open(cas.OpenOptions{
-				Dir: casDir, Create: true,
-			})
-			if err != nil {
-				return err
-			}
+		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, _ *pflag.FlagSet, args []string) error {
 			var last error
 			for _, arg := range args {
 				sr, err := storeAddr(ctx, s, arg, false)
@@ -34,7 +28,7 @@ func init() {
 				}
 			}
 			return last
-		},
+		}),
 	}
 	Root.AddCommand(cmd)
 }

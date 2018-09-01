@@ -1,17 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/dennwc/cas"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	"github.com/dennwc/cas"
 )
 
 func init() {
 	cmd := &cobra.Command{
 		Use:   "pull",
 		Short: "store the URL or file in the content-addressable storage under a named pin",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, _ *pflag.FlagSet, args []string) error {
 			if len(args) == 0 || len(args) > 2 {
 				return fmt.Errorf("expected 1 or 2 arguments")
 			}
@@ -20,13 +23,6 @@ func init() {
 			if len(args) == 2 {
 				name = args[0]
 				addr = args[1]
-			}
-			ctx := cmdCtx
-			s, err := cas.Open(cas.OpenOptions{
-				Dir: casDir, Create: true,
-			})
-			if err != nil {
-				return err
 			}
 
 			sr, err := storeAddr(ctx, s, addr, false)
@@ -38,7 +34,7 @@ func init() {
 			}
 			fmt.Println(name, "=", sr.Ref)
 			return nil
-		},
+		}),
 	}
 	Root.AddCommand(cmd)
 }

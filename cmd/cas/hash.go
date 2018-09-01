@@ -7,9 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dennwc/cas"
 	"github.com/dennwc/cas/types"
-	"github.com/spf13/cobra"
 )
 
 func init() {
