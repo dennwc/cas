@@ -40,8 +40,9 @@ func init() {
 	Root.AddCommand(cmd)
 
 	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "list all pins and their references",
+		Use:     "list",
+		Aliases: []string{"l", "ls"},
+		Short:   "list all pins and their references",
 		RunE: casOpenCmd(func(ctx context.Context, s *cas.Storage, _ *pflag.FlagSet, args []string) error {
 			if len(args) != 0 {
 				return fmt.Errorf("expected 0 arguments")

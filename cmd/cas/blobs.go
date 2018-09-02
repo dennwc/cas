@@ -16,7 +16,7 @@ import (
 func init() {
 	cmd := &cobra.Command{
 		Use:     "blob",
-		Aliases: []string{"blobs"},
+		Aliases: []string{"blobs", "b", "bl"},
 		Short:   "commands related to the binary data in content-addressable storage",
 	}
 	Root.AddCommand(cmd)
@@ -42,8 +42,9 @@ func init() {
 	cmd.AddCommand(getCmd)
 
 	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "list blob(s) stored in CAS",
+		Use:     "list",
+		Aliases: []string{"l", "ls"},
+		Short:   "list blob(s) stored in CAS",
 		RunE: casOpenCmd(func(ctx context.Context, st *cas.Storage, _ *pflag.FlagSet, args []string) error {
 			it := st.IterateBlobs(ctx)
 			defer it.Close()

@@ -15,14 +15,15 @@ import (
 func init() {
 	cmd := &cobra.Command{
 		Use:     "schema",
-		Aliases: []string{"sch"},
+		Aliases: []string{"sch", "s", "sc"},
 		Short:   "commands related to the CAS schema",
 	}
 	Root.AddCommand(cmd)
 
 	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "list schema blob(s) stored in CAS",
+		Use:     "list",
+		Aliases: []string{"l", "ls"},
+		Short:   "list schema blob(s) stored in CAS",
 		RunE: casOpenCmd(func(ctx context.Context, st *cas.Storage, flags *pflag.FlagSet, args []string) error {
 			typs, _ := flags.GetStringSlice("type")
 
