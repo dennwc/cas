@@ -155,7 +155,11 @@ func process(ctx context.Context, s *cas.Storage, cname string, cref, ref types.
 	if err != nil {
 		return types.SizedRef{}, err
 	}
-	err = w.Commit()
+	if sr.Ref == ref {
+		err = w.Close()
+	} else {
+		err = w.Commit()
+	}
 	if err != nil {
 		return types.SizedRef{}, err
 	}
