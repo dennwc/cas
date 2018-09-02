@@ -33,6 +33,7 @@ type BlobStorage interface {
 }
 
 type BlobIndexer interface {
+	FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error)
 	IterateSchema(ctx context.Context, typs ...string) SchemaIterator
 	Reindex(ctx context.Context, force bool) error
 }

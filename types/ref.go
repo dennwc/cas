@@ -37,6 +37,10 @@ func hashTextDecode(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
 
+func IsRef(s string) bool {
+	return strings.HasPrefix(s, DefaultHash+":")
+}
+
 func ParseRef(s string) (Ref, error) {
 	if len(s) == 0 {
 		return Ref{}, nil

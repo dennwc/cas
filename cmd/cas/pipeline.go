@@ -45,8 +45,28 @@ func init() {
 
 			refs := make([]types.Ref, 0, len(args))
 			mref := make(map[types.Ref]types.Ref)
-			for _, sref := range args {
-				ref, err := types.ParseRef(sref)
+			for _, arg := range args {
+				if !types.IsRef(arg) {
+					// interpret as a pin
+					ref, err := s.GetPin(ctx, arg)
+					if err != nil {
+						return err
+					}
+					// list all blobs in this pin
+					it := s.IterateDataBlobsIn(ctx, ref)
+					for it.Next() {
+						ref = it.Ref()
+						refs = append(refs, ref)
+						mref[ref] = types.Ref{}
+					}
+					err = it.Err()
+					it.Close()
+					if err != nil {
+						return err
+					}
+					continue
+				}
+				ref, err := types.ParseRef(arg)
 				if err != nil {
 					return err
 				}
@@ -77,7 +97,11 @@ func init() {
 
 			for _, ref := range refs {
 				if dref, ok := mref[ref]; ok && !dref.Zero() {
-					fmt.Println(ref, "->", dref, "(cached)")
+					if ref == dref {
+						fmt.Println(ref, "->", ".", "(cached)")
+					} else {
+						fmt.Println(ref, "->", dref, "(cached)")
+					}
 					continue
 				}
 				sr, err := process(ctx, s, cpath, cref.Ref, ref)
@@ -85,7 +109,11 @@ func init() {
 					fmt.Println(ref, err)
 					continue
 				}
-				fmt.Println(ref, "->", sr.Ref)
+				if ref == sr.Ref {
+					fmt.Println(ref, "->", ".")
+				} else {
+					fmt.Println(ref, "->", sr.Ref)
+				}
 			}
 			return nil
 		}),

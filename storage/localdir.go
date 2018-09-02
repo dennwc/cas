@@ -19,7 +19,8 @@ const (
 	dirPins  = "pins"
 	dirTmp   = "tmp"
 
-	xattrNS = "cas."
+	xattrNS         = "cas."
+	xattrSchemaType = xattrNS + "schema.type"
 
 	roPerm = 0444
 )
@@ -392,6 +393,13 @@ func (s *LocalStorage) Reindex(ctx context.Context, force bool) error {
 	return it.Err()
 }
 
+func (s *LocalStorage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
+	if typ, err := xattr.GetString(s.blobPath(ref), xattrSchemaType); err == nil && typ == "" {
+		return nil, 0, schema.ErrNotSchema
+	}
+	return s.FetchBlob(ctx, ref)
+}
+
 type schemaIterator struct {
 	s     *LocalStorage
 	ctx   context.Context
@@ -465,10 +473,9 @@ func (it *schemaIterator) Next() bool {
 
 func (it *schemaIterator) getType(name string) (string, error) {
 	path := filepath.Join(it.dir, name)
-	const attr = xattrNS + "schema.type"
 	if !it.force {
 		// first try to read cached xattr
-		typ, err := xattr.GetString(path, attr)
+		typ, err := xattr.GetString(path, xattrSchemaType)
 		if err == nil {
 			return typ, nil
 		} else if err != nil && err != xattr.ErrNotSet {
@@ -489,7 +496,7 @@ func (it *schemaIterator) getType(name string) (string, error) {
 		// files are set to RO so we need to set them to RW and then reset back
 		err = os.Chmod(path, 0644)
 		if err == nil {
-			err = xattr.SetString(path, attr, typ)
+			err = xattr.SetString(path, xattrSchemaType, typ)
 			_ = os.Chmod(path, roPerm)
 		}
 	}

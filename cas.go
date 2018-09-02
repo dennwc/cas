@@ -140,3 +140,16 @@ func (s *Storage) StoreSchema(ctx context.Context, o schema.Object) (SizedRef, e
 	exp := types.BytesRef(buf.Bytes())
 	return s.StoreBlob(ctx, exp, buf)
 }
+
+func (s *Storage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
+	return s.st.FetchSchema(ctx, ref)
+}
+
+func (s *Storage) DecodeSchema(ctx context.Context, ref types.Ref) (schema.Object, error) {
+	rc, _, err := s.st.FetchSchema(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return schema.Decode(rc)
+}
