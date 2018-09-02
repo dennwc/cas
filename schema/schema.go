@@ -58,6 +58,14 @@ func TypeOf(o Object) (string, error) {
 	return casNS + rt.Name(), nil
 }
 
+func MustTypeOf(o Object) string {
+	typ, err := TypeOf(o)
+	if err != nil {
+		panic(err)
+	}
+	return typ
+}
+
 func NewType(typ string) (Object, error) {
 	if !strings.HasPrefix(typ, casNS) {
 		return nil, fmt.Errorf("unsupported namespace: %q", typ)

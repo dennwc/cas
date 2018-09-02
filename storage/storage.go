@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/dennwc/cas/schema"
+
 	"github.com/dennwc/cas/types"
 )
 
@@ -38,6 +40,7 @@ type BlobIndexer interface {
 type SchemaIterator interface {
 	Iterator
 	Type() string
+	Decode() (schema.Object, error)
 }
 
 type BlobWriter interface {

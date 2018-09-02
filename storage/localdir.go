@@ -380,11 +380,11 @@ func (s *LocalStorage) IterateSchema(ctx context.Context, typs ...string) Schema
 			filter[v] = struct{}{}
 		}
 	}
-	return &schemaIterator{s: s, typs: filter, dir: filepath.Join(s.dir, dirBlobs)}
+	return &schemaIterator{s: s, ctx: ctx, typs: filter, dir: filepath.Join(s.dir, dirBlobs)}
 }
 
 func (s *LocalStorage) Reindex(ctx context.Context, force bool) error {
-	it := &schemaIterator{s: s, force: force, dir: filepath.Join(s.dir, dirBlobs)}
+	it := &schemaIterator{s: s, ctx: ctx, force: force, dir: filepath.Join(s.dir, dirBlobs)}
 	defer it.Close()
 	for it.Next() {
 		_ = it.Type()
@@ -394,6 +394,7 @@ func (s *LocalStorage) Reindex(ctx context.Context, force bool) error {
 
 type schemaIterator struct {
 	s     *LocalStorage
+	ctx   context.Context
 	typs  map[string]struct{}
 	dir   string
 	force bool
@@ -521,4 +522,14 @@ func (it *schemaIterator) Size() uint64 {
 
 func (it *schemaIterator) Type() string {
 	return it.typ
+}
+
+func (it *schemaIterator) Decode() (schema.Object, error) {
+	rc, _, err := it.s.FetchBlob(it.ctx, it.ref.Ref)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	return schema.Decode(rc)
 }

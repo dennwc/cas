@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os/exec"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dennwc/cas"
+	"github.com/dennwc/cas/schema"
 	"github.com/dennwc/cas/storage"
 	"github.com/dennwc/cas/types"
 )
@@ -27,16 +29,58 @@ func init() {
 				return fmt.Errorf("expected at least 2 arguments")
 			}
 			cname := args[0]
+			args = args[1:]
+
 			if !strings.ContainsAny(cname, "/.\\") {
 				cname = "cas-pipe-" + cname
 			}
-			args = args[1:]
+			cpath, err := exec.LookPath(cname)
+			if err != nil {
+				return err
+			}
+			cref, err := cas.Hash(ctx, cpath)
+			if err != nil {
+				return err
+			}
+
+			refs := make([]types.Ref, 0, len(args))
+			mref := make(map[types.Ref]types.Ref)
 			for _, sref := range args {
 				ref, err := types.ParseRef(sref)
 				if err != nil {
 					return err
 				}
-				sr, err := process(ctx, s, cname, ref)
+				refs = append(refs, ref)
+				mref[ref] = types.Ref{}
+			}
+			it := s.IterateSchema(ctx, schema.MustTypeOf(&schema.TransformOp{}))
+			defer it.Close()
+			for it.Next() {
+				obj, err := it.Decode()
+				if err != nil {
+					log.Println(it.Ref(), err)
+					continue
+				}
+				t, ok := obj.(*schema.TransformOp)
+				if !ok {
+					log.Printf("unexpected type: %T", obj)
+					continue
+				}
+				if t.Op != cref.Ref {
+					continue
+				}
+				if _, ok := mref[t.Src]; ok {
+					mref[t.Src] = t.Dst
+				}
+			}
+			it.Close()
+
+			for _, ref := range refs {
+				if dref, ok := mref[ref]; ok && !dref.Zero() {
+					fmt.Println(ref, "->", dref, "(cached)")
+					continue
+				}
+				sr, err := process(ctx, s, cpath, cref.Ref, ref)
 				if err != nil {
 					fmt.Println(ref, err)
 					continue
@@ -49,7 +93,7 @@ func init() {
 	Root.AddCommand(cmd)
 }
 
-func process(ctx context.Context, s *cas.Storage, cname string, ref types.Ref) (types.SizedRef, error) {
+func process(ctx context.Context, s *cas.Storage, cname string, cref, ref types.Ref) (types.SizedRef, error) {
 	rc, _, err := s.FetchBlob(ctx, ref)
 	if err != nil {
 		return types.SizedRef{}, err
@@ -114,6 +158,11 @@ func process(ctx context.Context, s *cas.Storage, cname string, ref types.Ref) (
 	err = w.Commit()
 	if err != nil {
 		return types.SizedRef{}, err
+	}
+	if _, err = s.StoreSchema(ctx, &schema.TransformOp{
+		Src: ref, Op: cref, Dst: sr.Ref,
+	}); err != nil {
+		log.Println(err)
 	}
 	return sr, nil
 }
