@@ -65,6 +65,13 @@ func (s *Storage) GetPin(ctx context.Context, name string) (types.Ref, error) {
 	return s.st.GetPin(ctx, name)
 }
 
+func (s *Storage) GetPinOrRef(ctx context.Context, name string) (types.Ref, error) {
+	if !types.IsRef(name) {
+		return s.GetPin(ctx, name)
+	}
+	return types.ParseRef(name)
+}
+
 func (s *Storage) IteratePins(ctx context.Context) storage.PinIterator {
 	return s.st.IteratePins(ctx)
 }

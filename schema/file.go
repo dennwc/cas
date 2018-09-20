@@ -10,6 +10,10 @@ func init() {
 	Register(&Multipart{})
 }
 
+type BlobWrapper interface {
+	DataBlob() types.Ref
+}
+
 type Directory struct {
 	List []DirEntry `json:"list"`
 }
