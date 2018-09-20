@@ -17,7 +17,7 @@ func init() {
 		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, _ *pflag.FlagSet, args []string) error {
 			var last error
 			for _, arg := range args {
-				sr, err := storeAddr(ctx, s, arg, true)
+				sr, err := s.StoreAddr(ctx, arg, true)
 				if err != nil {
 					last = err
 					fmt.Println(arg, err)

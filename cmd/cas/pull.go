@@ -25,7 +25,7 @@ func init() {
 				addr = args[1]
 			}
 
-			sr, err := storeAddr(ctx, s, addr, false)
+			sr, err := s.StoreAddr(ctx, addr, false)
 			if err != nil {
 				return err
 			}
