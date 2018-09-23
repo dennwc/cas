@@ -48,7 +48,8 @@ func init() {
 			it := st.IterateBlobs(ctx)
 			defer it.Close()
 			for it.Next() {
-				fmt.Println(it.Ref(), it.Size())
+				sr := it.SizedRef()
+				fmt.Println(sr.Ref, sr.Size)
 			}
 			return it.Err()
 		}),

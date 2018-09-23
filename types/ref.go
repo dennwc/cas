@@ -100,6 +100,30 @@ type SizedRef struct {
 	Size uint64 `json:"size,omitempty"`
 }
 
+func (sr *SizedRef) References() []Ref {
+	if sr.Ref.Zero() {
+		return nil
+	}
+	return []Ref{sr.Ref}
+}
+
+type SchemaRef struct {
+	Ref  Ref    `json:"ref"`
+	Size uint64 `json:"size,omitempty"`
+	Type string `json:"type,omitempty"`
+}
+
+func (sr SchemaRef) SizedRef() SizedRef {
+	return SizedRef{Ref: sr.Ref, Size: sr.Size}
+}
+
+func (sr *SchemaRef) References() []Ref {
+	if sr.Ref.Zero() {
+		return nil
+	}
+	return []Ref{sr.Ref}
+}
+
 var (
 	_ encoding.TextMarshaler   = Ref{}
 	_ encoding.TextUnmarshaler = (*Ref)(nil)
@@ -166,4 +190,16 @@ func Hash(r io.Reader) (SizedRef, error) {
 	n, err := io.Copy(h, r)
 	ref = ref.WithHash(h)
 	return SizedRef{Ref: ref, Size: uint64(n)}, err
+}
+
+type Pin struct {
+	Name string `json:"name"`
+	Ref  Ref    `json:"ref"`
+}
+
+func (p *Pin) References() []Ref {
+	if p.Ref.Zero() {
+		return nil
+	}
+	return []Ref{p.Ref}
 }

@@ -13,6 +13,10 @@ import (
 	"github.com/dennwc/cas/types"
 )
 
+var (
+	typeDirEnt = schema.MustTypeOf(&schema.DirEntry{})
+)
+
 const (
 	maxDirEntries = 1024
 )
@@ -112,11 +116,14 @@ func (s *Storage) storeDirList(ctx context.Context, list []schema.DirEntry) (Siz
 		cnt  uint
 		size uint64
 	)
+	olist := make([]schema.Object, 0, len(list))
 	for _, e := range list {
 		cnt += e.Count + 1
 		size += e.Size
+		e := e
+		olist = append(olist, &e)
 	}
-	m := &schema.Directory{List: list}
+	m := &schema.InlineList{Elem: typeDirEnt, List: olist}
 	sr, err := s.StoreSchema(ctx, m)
 	if err != nil {
 		return SizedRef{}, schema.DirEntry{}, err
@@ -124,19 +131,20 @@ func (s *Storage) storeDirList(ctx context.Context, list []schema.DirEntry) (Siz
 	return sr, schema.DirEntry{Ref: sr.Ref, Count: cnt, Size: size}, nil
 }
 
-func (s *Storage) storeDirJoin(ctx context.Context, refs []Ref, list []schema.JoinDirectories) (SizedRef, schema.JoinDirectories, error) {
-	var (
-		cnt  uint
-		size uint64
-	)
-	for _, e := range list {
-		cnt += e.Count
-		size += e.Size
-	}
-	m := schema.JoinDirectories{List: refs, Count: cnt, Size: size}
+func (s *Storage) storeDirJoin(ctx context.Context, refs []Ref, list []schema.List) (SizedRef, schema.List, error) {
+	// TODO: aggregate stats
+	//var (
+	//	cnt  uint
+	//	size uint64
+	//)
+	//for _, e := range list {
+	//	cnt += e.Count
+	//	size += e.Size
+	//}
+	m := schema.List{Elem: typeDirEnt, List: refs}
 	sr, err := s.StoreSchema(ctx, &m)
 	if err != nil {
-		return SizedRef{}, schema.JoinDirectories{}, err
+		return SizedRef{}, schema.List{}, err
 	}
 	return sr, m, nil
 }
@@ -183,9 +191,9 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 		return base[i].Name < base[j].Name
 	})
 	var (
-		level []schema.JoinDirectories
+		level []schema.List
 		refs  []Ref
-		cur   schema.JoinDirectories
+		cur   schema.List
 	)
 	if len(base) <= maxDirEntries {
 		return s.storeDirList(ctx, base)
@@ -197,26 +205,28 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 		}
 		base = base[len(page):]
 
-		sr, st, err := s.storeDirList(ctx, page)
+		sr, _, err := s.storeDirList(ctx, page)
 		if err != nil {
 			return SizedRef{}, schema.DirEntry{}, err
 		}
-		cur.Size += st.Size
-		cur.Count += st.Count
+		// TODO: aggregate stats
+		//cur.Size += st.Size
+		//cur.Count += st.Count
 		cur.List = append(cur.List, sr.Ref)
 		if len(cur.List) >= maxDirEntries || len(base) == 0 {
+			cur.Elem = typeDirEnt
 			sr, err = s.StoreSchema(ctx, &cur)
 			if err != nil {
 				return SizedRef{}, schema.DirEntry{}, err
 			}
 			level = append(level, cur)
 			refs = append(refs, sr.Ref)
-			cur = schema.JoinDirectories{}
+			cur = schema.List{}
 		}
 	}
 	for len(level) > 1 {
 		var (
-			newLevel []schema.JoinDirectories
+			newLevel []schema.List
 			newRefs  []Ref
 		)
 		for len(level) > 0 {
@@ -243,7 +253,11 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 	if err != nil {
 		return SizedRef{}, schema.DirEntry{}, err
 	}
-	return sr, schema.DirEntry{Ref: sr.Ref, Count: top.Count, Size: top.Size}, nil
+	return sr, schema.DirEntry{
+		Ref: sr.Ref,
+		// TODO: aggregate stats
+		//Count: top.Count, Size: top.Size,
+	}, nil
 }
 
 func (s *Storage) IndexAsFile(ctx context.Context, fd FileDesc) (SizedRef, error) {

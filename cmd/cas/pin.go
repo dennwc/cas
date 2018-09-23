@@ -51,7 +51,8 @@ func init() {
 			it := s.IteratePins(ctx)
 			defer it.Close()
 			for it.Next() {
-				fmt.Println(it.Name(), "=", it.Ref())
+				pin := it.Pin()
+				fmt.Println(pin.Name, "=", pin.Ref)
 			}
 			return it.Err()
 		}),

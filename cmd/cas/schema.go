@@ -30,7 +30,8 @@ func init() {
 			it := st.IterateSchema(ctx, typs...)
 			defer it.Close()
 			for it.Next() {
-				fmt.Println(it.Ref(), it.Size(), it.Type())
+				sr := it.SchemaRef()
+				fmt.Println(sr.Ref, sr.Size, sr.Type)
 			}
 			return it.Err()
 		}),
@@ -60,11 +61,12 @@ func init() {
 			)
 			for (limit <= 0 || cnt < limit) && it.Next() {
 				cnt++
+				sr := it.SizedRef()
 				if count {
 					// TODO: this can be optimized since dir blobs store aggregated count and size
-					size += it.Size()
+					size += sr.Size
 				} else {
-					fmt.Println(it.Ref(), it.Size())
+					fmt.Println(sr.Ref, sr.Size)
 				}
 			}
 			if count {

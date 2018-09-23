@@ -28,6 +28,12 @@ const (
 	MagicSize = len(magic)
 )
 
+func init() {
+	Register(&types.SizedRef{})
+	Register(&types.SchemaRef{})
+	Register(&types.Pin{})
+}
+
 type Object interface {
 	// TODO: split into DependsOn and Describes
 

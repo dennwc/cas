@@ -40,14 +40,14 @@ type BlobIndexer interface {
 
 type SchemaIterator interface {
 	Iterator
-	Type() string
+	SchemaRef() types.SchemaRef
 	Decode() (schema.Object, error)
 }
 
 type BlobWriter interface {
 	io.Writer
 	// Complete returns the hash and size of the written blob.
-	// Use should either Close the writer to discard the blob or Commit to store the blob.
+	// User should either Close the writer to discard the blob or Commit to store the blob.
 	// All writes after this call will fail.
 	Complete() (types.SizedRef, error)
 	// Close will discard the blob.
@@ -78,12 +78,10 @@ type BaseIterator interface {
 
 type Iterator interface {
 	BaseIterator
-	Ref() types.Ref
-	Size() uint64
+	SizedRef() types.SizedRef
 }
 
 type PinIterator interface {
 	BaseIterator
-	Ref() types.Ref
-	Name() string
+	Pin() types.Pin
 }

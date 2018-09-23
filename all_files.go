@@ -22,6 +22,21 @@ type filesInIterator struct {
 	err error
 }
 
+func (it *filesInIterator) addRefsFrom(obj schema.Object) {
+	switch obj := obj.(type) {
+	case *schema.DirEntry:
+		it.refs = append(it.refs, obj.Ref)
+	case *schema.List:
+		for _, ent := range obj.List {
+			it.refs = append(it.refs, ent)
+		}
+	case *schema.InlineList:
+		for _, ent := range obj.List {
+			it.addRefsFrom(ent)
+		}
+	}
+}
+
 func (it *filesInIterator) Next() bool {
 	for {
 		if it.err != nil || len(it.refs) == 0 {
@@ -45,18 +60,7 @@ func (it *filesInIterator) Next() bool {
 			it.err = err
 			return false
 		}
-		switch obj := obj.(type) {
-		case *schema.DirEntry:
-			it.refs = append(it.refs, obj.Ref)
-		case *schema.Directory:
-			for _, ent := range obj.List {
-				it.refs = append(it.refs, ent.Ref)
-			}
-		case *schema.JoinDirectories:
-			for _, ent := range obj.List {
-				it.refs = append(it.refs, ent)
-			}
-		}
+		it.addRefsFrom(obj)
 		// continue loop
 	}
 }
@@ -70,10 +74,6 @@ func (it *filesInIterator) Close() error {
 	return nil
 }
 
-func (it *filesInIterator) Ref() types.Ref {
-	return it.cur.Ref
-}
-
-func (it *filesInIterator) Size() uint64 {
-	return it.cur.Size
+func (it *filesInIterator) SizedRef() types.SizedRef {
+	return it.cur
 }

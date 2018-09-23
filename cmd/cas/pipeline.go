@@ -55,7 +55,7 @@ func init() {
 					// list all blobs in this pin
 					it := s.IterateDataBlobsIn(ctx, ref)
 					for it.Next() {
-						ref = it.Ref()
+						ref = it.SizedRef().Ref
 						refs = append(refs, ref)
 						mref[ref] = types.Ref{}
 					}
@@ -78,7 +78,7 @@ func init() {
 			for it.Next() {
 				obj, err := it.Decode()
 				if err != nil {
-					log.Println(it.Ref(), err)
+					log.Println(it.SizedRef().Ref, err)
 					continue
 				}
 				t, ok := obj.(*schema.TransformOp)

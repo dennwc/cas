@@ -218,12 +218,11 @@ type dirIterator struct {
 
 	err   error
 	infos []os.FileInfo
-	ref   types.Ref
-	size  uint64
+	sr    types.SizedRef
 }
 
 func (it *dirIterator) Next() bool {
-	it.ref, it.size = types.Ref{}, 0
+	it.sr = types.SizedRef{}
 	if it.err != nil {
 		return false
 	}
@@ -252,8 +251,8 @@ func (it *dirIterator) Next() bool {
 	}
 	info := it.infos[0]
 	it.infos = it.infos[1:]
-	it.size = uint64(info.Size())
-	it.ref, it.err = types.ParseRef(info.Name())
+	it.sr.Size = uint64(info.Size())
+	it.sr.Ref, it.err = types.ParseRef(info.Name())
 	if it.err != nil {
 		return false
 	}
@@ -264,12 +263,8 @@ func (it *dirIterator) Err() error {
 	return it.err
 }
 
-func (it *dirIterator) Ref() types.Ref {
-	return it.ref
-}
-
-func (it *dirIterator) Size() uint64 {
-	return it.size
+func (it *dirIterator) SizedRef() types.SizedRef {
+	return it.sr
 }
 
 func (it *dirIterator) Close() error {
@@ -309,12 +304,11 @@ type pinIterator struct {
 
 	err   error
 	infos []os.FileInfo
-	ref   types.Ref
-	name  string
+	cur   types.Pin
 }
 
 func (it *pinIterator) Next() bool {
-	it.ref, it.name = types.Ref{}, ""
+	it.cur = types.Pin{}
 	if it.err != nil {
 		return false
 	}
@@ -343,13 +337,13 @@ func (it *pinIterator) Next() bool {
 	}
 	info := it.infos[0]
 	it.infos = it.infos[1:]
-	it.name = info.Name()
+	it.cur.Name = info.Name()
 	data, err := ioutil.ReadFile(filepath.Join(it.dir, info.Name()))
 	if err != nil {
 		it.err = err
 		return false
 	}
-	it.ref, it.err = types.ParseRef(string(data))
+	it.cur.Ref, it.err = types.ParseRef(string(data))
 	if it.err != nil {
 		return false
 	}
@@ -360,12 +354,8 @@ func (it *pinIterator) Err() error {
 	return it.err
 }
 
-func (it *pinIterator) Ref() types.Ref {
-	return it.ref
-}
-
-func (it *pinIterator) Name() string {
-	return it.name
+func (it *pinIterator) Pin() types.Pin {
+	return it.cur
 }
 
 func (it *pinIterator) Close() error {
@@ -388,7 +378,7 @@ func (s *LocalStorage) Reindex(ctx context.Context, force bool) error {
 	it := &schemaIterator{s: s, ctx: ctx, force: force, dir: filepath.Join(s.dir, dirBlobs)}
 	defer it.Close()
 	for it.Next() {
-		_ = it.Type()
+		_ = it.SchemaRef()
 	}
 	return it.Err()
 }
@@ -410,8 +400,7 @@ type schemaIterator struct {
 	d   *os.File
 	buf []string
 
-	typ string
-	ref types.SizedRef
+	sr  types.SchemaRef
 	err error
 }
 
@@ -465,7 +454,7 @@ func (it *schemaIterator) Next() bool {
 				it.err = err
 				return false
 			}
-			it.typ, it.ref.Ref, it.ref.Size = typ, ref, uint64(st.Size())
+			it.sr.Type, it.sr.Ref, it.sr.Size = typ, ref, uint64(st.Size())
 			return true
 		}
 	}
@@ -519,20 +508,16 @@ func (it *schemaIterator) Close() error {
 	return it.err
 }
 
-func (it *schemaIterator) Ref() types.Ref {
-	return it.ref.Ref
+func (it *schemaIterator) SizedRef() types.SizedRef {
+	return it.sr.SizedRef()
 }
 
-func (it *schemaIterator) Size() uint64 {
-	return it.ref.Size
-}
-
-func (it *schemaIterator) Type() string {
-	return it.typ
+func (it *schemaIterator) SchemaRef() types.SchemaRef {
+	return it.sr
 }
 
 func (it *schemaIterator) Decode() (schema.Object, error) {
-	rc, _, err := it.s.FetchBlob(it.ctx, it.ref.Ref)
+	rc, _, err := it.s.FetchBlob(it.ctx, it.sr.Ref)
 	if err != nil {
 		return nil, err
 	}

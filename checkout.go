@@ -52,11 +52,21 @@ func (s *Storage) checkoutFileOrDir(ctx context.Context, ref Ref, dst string) er
 
 func (s *Storage) checkoutObject(ctx context.Context, oref Ref, obj schema.Object, dst string) error {
 	switch obj := obj.(type) {
-	case *schema.Directory:
+	case *schema.InlineList:
+		switch obj.Elem {
+		case typeDirEnt:
+			// continue
+		default:
+			return fmt.Errorf("unsupported list element: %q", obj.Elem)
+		}
 		if err := os.MkdirAll(dst, 0755); err != nil {
 			return err
 		}
-		for _, ent := range obj.List {
+		for _, e := range obj.List {
+			ent, ok := e.(*schema.DirEntry)
+			if !ok {
+				return fmt.Errorf("expected dir entry, got: %T", e)
+			}
 			spath := filepath.Join(dst, ent.Name)
 			sub, err := s.DecodeSchema(ctx, ent.Ref)
 			if err == nil {
@@ -71,7 +81,13 @@ func (s *Storage) checkoutObject(ctx context.Context, oref Ref, obj schema.Objec
 			}
 		}
 		return nil
-	case *schema.JoinDirectories:
+	case *schema.List:
+		switch obj.Elem {
+		case typeDirEnt:
+			// continue
+		default:
+			return fmt.Errorf("unsupported list element: %q", obj.Elem)
+		}
 		if err := os.MkdirAll(dst, 0755); err != nil {
 			return err
 		}
@@ -83,13 +99,8 @@ func (s *Storage) checkoutObject(ctx context.Context, oref Ref, obj schema.Objec
 				return err
 			}
 			switch sub := sub.(type) {
-			case *schema.JoinDirectories:
+			case *schema.List, *schema.InlineList:
 				// continue checking up this directory
-				if err := s.checkoutObject(ctx, ref, sub, dst); err != nil {
-					return err
-				}
-			case *schema.Directory:
-				// hit a leaf
 				if err := s.checkoutObject(ctx, ref, sub, dst); err != nil {
 					return err
 				}
