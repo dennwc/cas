@@ -36,6 +36,7 @@ func (s *Storage) checkoutBlob(ctx context.Context, ref Ref, dst string) error {
 	if err != nil {
 		return err
 	}
+	// TODO: write the hash to xattrs
 	return f.Close()
 }
 

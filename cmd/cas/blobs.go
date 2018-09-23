@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dennwc/cas"
-	"github.com/dennwc/cas/types"
 )
 
 func init() {
@@ -28,7 +27,7 @@ func init() {
 		RunE: casOpenCmd(func(ctx context.Context, st *cas.Storage, _ *pflag.FlagSet, args []string) error {
 			var w io.Writer = os.Stdout
 			for _, arg := range args {
-				ref, err := types.ParseRef(arg)
+				ref, err := st.GetPinOrRef(ctx, arg)
 				if err != nil {
 					return err
 				}

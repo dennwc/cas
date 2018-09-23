@@ -3,6 +3,12 @@
 This project implements a simple and pragmatic approach to Content Addressable Storage (CAS).
 It was heavily influenced by [Perkeep](https://perkeep.org/) (aka Camlistore) and Git.
 
+## Status
+
+The project is in an active development. Both API and on-disk format may change.
+
+Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands.
+
 ## Goals
 
 - **Simplicity:** the core specification should be trivial to implement.
@@ -12,7 +18,64 @@ It was heavily influenced by [Perkeep](https://perkeep.org/) (aka Camlistore) an
 
 - **Easy to use:** CAS should be a single command away, similar to `git init`.
 
+## Use cases
 
-## Status
+- Immutable and versioned archives: CAS supports files with multiple
+  TBs of data, folders with millions of files and can index and use remote
+  data without storing it locally.
 
-The project is in an active development. Both API and on-disk format may change.
+- Data processing pipelines: CAS caching capabilities allows to use it for
+  incremental data pipelines.
+
+- Git for large files: CAS stores files with an assumption that they can
+  be multiple TBs and is optimized for this use case, while still supporting
+  tags and branches, like Git.
+
+## Features and the roadmap
+
+**Implemented:**
+
+- Fast file hashing
+    - SHA-256, other can be used
+    - Stores results in file attributes (cache)
+- Support for large archives
+    - Large contiguous files (> TB)
+    - Large directories (> millions of files)
+    - Zero-copy file fetch (BTRFS)
+- Integrations
+    - Can index web content
+- Usability
+    - Mutable objects (pins)
+    - Local storage in Git fashion
+- Data pipelines
+    - Extendable
+    - Caches results
+    - Incremental
+
+**Planned:**
+
+- Support for large multipart files (> TB)
+    - Support blob splitters (size threshold, rolling checksum, new line, etc)
+
+- Remote storage
+    - GCS, AWS, etc
+    - Self-hosted HTTP CAS server
+- Web integration
+    - Sync web content (only fetch is implemented currently)
+- Integration with Git
+    - Zero-copy fetch from Git (either remote or local)
+    - LFS integration
+- Integration with Docker
+    - Zero-copy fetch of an image from Docker
+    - Unpack FS images to CAS
+    - Use containers in pipelines
+- Integration with BitTorrent:
+    - Store torrent files
+    - Download torrent data directly to CAS
+    - To consider: expose CAS as a peer
+- Integration with other CAS systems:
+    - Perkeep
+    - Upspin
+    - IPFS
+- Windows and OSX support
+- Better support for pipelines
