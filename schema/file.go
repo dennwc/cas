@@ -15,8 +15,11 @@ type BlobWrapper interface {
 type DirEntry struct {
 	Ref   types.Ref `json:"ref"`
 	Name  string    `json:"name"`
-	Count uint      `json:"cnt,omitempty"`  // count of files and directories inside this dir entry (not counting this entry)
-	Size  uint64    `json:"size,omitempty"` // total size of files inside this dir entry or a size of the file
+	Stats Stats     `json:"stats"`
+}
+
+func (d *DirEntry) Size() uint64 {
+	return d.Stats[StatDataSize]
 }
 
 func (d *DirEntry) References() []types.Ref {

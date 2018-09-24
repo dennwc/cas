@@ -34,6 +34,14 @@ func init() {
 	Register(&types.Pin{})
 }
 
+const (
+	StatDataSize  = "size" // size of all raw blobs (excluding the schema)
+	StatDataCount = "cnt"  // number of full objects (logical trees)
+)
+
+// Stats is a collection of stat values.
+type Stats map[string]uint64
+
 type Object interface {
 	// TODO: split into DependsOn and Describes
 

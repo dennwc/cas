@@ -17,15 +17,19 @@ func TestEncode(t *testing.T) {
 		{
 			name: "file",
 			obj: &DirEntry{
-				Ref:  types.StringRef("abc"),
-				Size: 127,
+				Ref: types.StringRef("abc"),
+				Stats: Stats{
+					StatDataSize: 127,
+				},
 				Name: "file.dat",
 			},
 			exp: `{
  "@type": "cas:DirEntry",
  "ref": "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
  "name": "file.dat",
- "size": 127
+ "stats": {
+  "size": 127
+ }
 }
 `,
 		},

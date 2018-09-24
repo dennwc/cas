@@ -43,8 +43,11 @@ func (s *Storage) storeAsFile(ctx context.Context, fd FileDesc, indexOnly bool) 
 	if !xr.Ref.Zero() {
 		// we know the ref beforehand
 		m := &schema.DirEntry{
-			Ref: xr.Ref, Size: xr.Size,
+			Ref:  xr.Ref,
 			Name: fd.Name(),
+			Stats: Stats{
+				schema.StatDataSize: xr.Size,
+			},
 		}
 		if indexOnly {
 			// if only indexing - return the response directly
@@ -71,8 +74,11 @@ func (s *Storage) storeAsFile(ctx context.Context, fd FileDesc, indexOnly bool) 
 				if sr, err := l.ImportFile(ctx, lf.path); err == nil {
 					fd.SetRef(sr)
 					return &schema.DirEntry{
-						Ref: sr.Ref, Size: sr.Size,
+						Ref:  sr.Ref,
 						Name: fd.Name(),
+						Stats: Stats{
+							schema.StatDataSize: sr.Size,
+						},
 					}, nil
 				}
 			}
@@ -106,42 +112,47 @@ func (s *Storage) storeAsFile(ctx context.Context, fd FileDesc, indexOnly bool) 
 		return nil, err
 	}
 	return &schema.DirEntry{
-		Ref: sr.Ref, Size: sr.Size,
+		Ref:  sr.Ref,
 		Name: name,
+		Stats: Stats{
+			schema.StatDataSize: sr.Size,
+		},
 	}, nil
 }
 
-func (s *Storage) storeDirList(ctx context.Context, list []schema.DirEntry) (SizedRef, schema.DirEntry, error) {
-	var (
-		cnt  uint
-		size uint64
-	)
+func (s *Storage) storeDirList(ctx context.Context, list []schema.DirEntry) (SizedRef, Stats, error) {
+	stats := make(Stats)
 	olist := make([]schema.Object, 0, len(list))
 	for _, e := range list {
-		cnt += e.Count + 1
-		size += e.Size
+		for k, v := range e.Stats {
+			stats[k] += v
+		}
+		stats[schema.StatDataCount]++
 		e := e
 		olist = append(olist, &e)
 	}
-	m := &schema.InlineList{Elem: typeDirEnt, List: olist}
+	if len(stats) == 0 {
+		stats = nil
+	}
+	m := &schema.InlineList{Elem: typeDirEnt, List: olist, Stats: stats}
 	sr, err := s.StoreSchema(ctx, m)
 	if err != nil {
-		return SizedRef{}, schema.DirEntry{}, err
+		return SizedRef{}, nil, err
 	}
-	return sr, schema.DirEntry{Ref: sr.Ref, Count: cnt, Size: size}, nil
+	return sr, stats, nil
 }
 
 func (s *Storage) storeDirJoin(ctx context.Context, refs []Ref, list []schema.List) (SizedRef, schema.List, error) {
-	// TODO: aggregate stats
-	//var (
-	//	cnt  uint
-	//	size uint64
-	//)
-	//for _, e := range list {
-	//	cnt += e.Count
-	//	size += e.Size
-	//}
-	m := schema.List{Elem: typeDirEnt, List: refs}
+	stats := make(schema.Stats)
+	for _, e := range list {
+		for k, v := range e.Stats {
+			stats[k] += v
+		}
+	}
+	if len(stats) == 0 {
+		stats = nil
+	}
+	m := schema.List{Elem: typeDirEnt, List: refs, Stats: stats}
 	sr, err := s.StoreSchema(ctx, &m)
 	if err != nil {
 		return SizedRef{}, schema.List{}, err
@@ -149,10 +160,10 @@ func (s *Storage) storeDirJoin(ctx context.Context, refs []Ref, list []schema.Li
 	return sr, m, nil
 }
 
-func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRef, schema.DirEntry, error) {
+func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRef, Stats, error) {
 	d, err := os.Open(dir)
 	if err != nil {
-		return SizedRef{}, schema.DirEntry{}, err
+		return SizedRef{}, nil, err
 	}
 	defer d.Close()
 
@@ -163,7 +174,7 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 			d.Close()
 			break
 		} else if err != nil {
-			return SizedRef{}, schema.DirEntry{}, err
+			return SizedRef{}, nil, err
 		}
 		for _, fi := range buf {
 			if fi.Name() == DefaultDir {
@@ -173,15 +184,16 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 			if fi.IsDir() {
 				sr, st, err := s.storeDir(ctx, fpath, index)
 				if err != nil {
-					return SizedRef{}, schema.DirEntry{}, err
+					return SizedRef{}, nil, err
 				}
-				st.Ref = sr.Ref
-				st.Name = fi.Name()
-				base = append(base, st)
+				base = append(base, schema.DirEntry{
+					Ref: sr.Ref, Name: fi.Name(),
+					Stats: st,
+				})
 			} else {
 				ent, err := s.storeAsFile(ctx, LocalFile(fpath), index)
 				if err != nil {
-					return SizedRef{}, schema.DirEntry{}, err
+					return SizedRef{}, nil, err
 				}
 				base = append(base, *ent)
 			}
@@ -205,19 +217,22 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 		}
 		base = base[len(page):]
 
-		sr, _, err := s.storeDirList(ctx, page)
+		sr, stats, err := s.storeDirList(ctx, page)
 		if err != nil {
-			return SizedRef{}, schema.DirEntry{}, err
+			return SizedRef{}, nil, err
 		}
-		// TODO: aggregate stats
-		//cur.Size += st.Size
-		//cur.Count += st.Count
+		if cur.Stats == nil {
+			cur.Stats = make(schema.Stats, 2)
+			for k, v := range stats {
+				cur.Stats[k] += v
+			}
+		}
 		cur.List = append(cur.List, sr.Ref)
 		if len(cur.List) >= maxDirEntries || len(base) == 0 {
 			cur.Elem = typeDirEnt
 			sr, err = s.StoreSchema(ctx, &cur)
 			if err != nil {
-				return SizedRef{}, schema.DirEntry{}, err
+				return SizedRef{}, nil, err
 			}
 			level = append(level, cur)
 			refs = append(refs, sr.Ref)
@@ -241,7 +256,7 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 
 			sr, cur, err := s.storeDirJoin(ctx, pref, page)
 			if err != nil {
-				return SizedRef{}, schema.DirEntry{}, err
+				return SizedRef{}, nil, err
 			}
 			newLevel = append(newLevel, cur)
 			newRefs = append(newRefs, sr.Ref)
@@ -251,13 +266,9 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 	top := level[0]
 	sr, err := s.StoreSchema(ctx, &top)
 	if err != nil {
-		return SizedRef{}, schema.DirEntry{}, err
+		return SizedRef{}, nil, err
 	}
-	return sr, schema.DirEntry{
-		Ref: sr.Ref,
-		// TODO: aggregate stats
-		//Count: top.Count, Size: top.Size,
-	}, nil
+	return sr, top.Stats, nil
 }
 
 func (s *Storage) IndexAsFile(ctx context.Context, fd FileDesc) (SizedRef, error) {
@@ -286,7 +297,7 @@ func (s *Storage) storeFilePath(ctx context.Context, path string, index bool) (S
 		return sr, err
 	}
 	ent, err := s.storeAsFile(ctx, LocalFile(path), index)
-	return SizedRef{Ref: ent.Ref, Size: ent.Size}, err
+	return SizedRef{Ref: ent.Ref, Size: ent.Size()}, err
 }
 
 func (s *Storage) IndexFilePath(ctx context.Context, path string) (SizedRef, error) {
