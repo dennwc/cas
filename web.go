@@ -35,9 +35,9 @@ func (s *Storage) StoreURLContent(ctx context.Context, url string, conf *StoreCo
 	return s.StoreHTTPContent(ctx, req, conf)
 }
 
-func (s *Storage) storeWebContentSchema(ctx context.Context, sr SizedRef, req *http.Request, resp *http.Response) (SizedRef, error) {
+func NewWebContent(req *http.Request, resp *http.Response) *schema.WebContent {
 	m := schema.WebContent{
-		URL: req.URL.String(), Ref: sr.Ref, Size: sr.Size,
+		URL:  req.URL.String(),
 		ETag: strings.Trim(resp.Header.Get("ETag"), `"`),
 	}
 	if v := resp.Header.Get("Last-Modified"); v != "" {
@@ -49,7 +49,13 @@ func (s *Storage) storeWebContentSchema(ctx context.Context, sr SizedRef, req *h
 		t := time.Now().UTC()
 		m.TS = &t
 	}
-	return s.StoreSchema(ctx, &m)
+	return &m
+}
+
+func (s *Storage) storeWebContentSchema(ctx context.Context, sr SizedRef, req *http.Request, resp *http.Response) (SizedRef, error) {
+	m := NewWebContent(req, resp)
+	m.Ref, m.Size = sr.Ref, sr.Size
+	return s.StoreSchema(ctx, m)
 }
 
 func (s *Storage) StoreHTTPContent(ctx context.Context, req *http.Request, conf *StoreConfig) (SizedRef, error) {
