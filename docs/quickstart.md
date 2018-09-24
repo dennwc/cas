@@ -196,17 +196,22 @@ This effectively creates a link for CAS that can be used to either sync
 remote data from time to time, or to always retrieve the data from
 remote without storing it locally, while preserving CAS properties.
 
-<!-- TODO: implement `cas sync` and allow `cas get` to read remote data -->
+<!-- TODO: allow `cas get` to read remote data -->
 
 ### Synchronizing web data
 
 Since CAS stores Etag and timestamp when pulling data from the Web, it
 is able to verify that remote data is still the same. If web server supports
-ETags or `If-Modified-Since` header, the response will be instant. If not,
-CAS will still need to read the content of an URL to verify if it was not
-modified.
+`If-None-Match` or `If-Modified-Since` headers, the response will be instant.
+If not, CAS will still need to read the content of an URL to verify if
+it was not modified.
 
-<!-- TODO: examples of `cas sync` -->
+```
+$ cas pull xkcd https://imgs.xkcd.com/comics/curve_fitting.png
+xkcd = sha256:34fc6626...
+$ cas sync xkcd
+xkcd -> sha256:34fc6626... (up-to-date)
+```
 
 ## Pipelines
 
