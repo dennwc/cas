@@ -3,11 +3,13 @@ package cas
 import (
 	"context"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/dennwc/cas/schema"
+	"github.com/dennwc/cas/storage"
 	"github.com/dennwc/cas/types"
 )
 
@@ -21,20 +23,32 @@ func (s *Storage) Checkout(ctx context.Context, ref Ref, dst string) error {
 	return s.checkoutFileOrDir(ctx, ref, dst)
 }
 
-func (s *Storage) checkoutBlobData(ctx context.Context, r io.Reader, ref SizedRef, dst string) error {
+func (s *Storage) checkoutBlobData(ctx context.Context, r io.Reader, sr SizedRef, dst string) error {
 	f, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	if ref.Size != 0 {
-		_, err = io.CopyN(f, r, int64(ref.Size))
+	var h hash.Hash
+	if !sr.Ref.Zero() {
+		h = sr.Ref.Hash()
+		r = io.TeeReader(r, h)
+	}
+	if sr.Size != 0 {
+		_, err = io.CopyN(f, r, int64(sr.Size))
 	} else {
 		_, err = io.Copy(f, r)
 	}
-	// TODO: verify hash
 	if err != nil {
 		return err
+	}
+	if h != nil {
+		ref := sr.Ref.WithHash(h)
+		if sr.Ref != ref {
+			f.Close()
+			os.Remove(dst)
+			return storage.ErrRefMissmatch{Exp: sr.Ref, Got: ref}
+		}
 	}
 	fi, err := f.Stat()
 	if err != nil {
@@ -44,7 +58,7 @@ func (s *Storage) checkoutBlobData(ctx context.Context, r io.Reader, ref SizedRe
 	if err != nil {
 		return err
 	}
-	return SaveRef(ctx, dst, fi, ref.Ref)
+	return SaveRef(ctx, dst, fi, sr.Ref)
 }
 
 func (s *Storage) checkoutBlob(ctx context.Context, ref Ref, dst string) error {
