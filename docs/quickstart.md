@@ -185,7 +185,7 @@ the ETag, timestamp, the size and the ref of an actual blob.
 an alternative method: only index web content, without pulling the data.
 
 ```
-$ cas index https://imgs.xkcd.com/comics/curve_fitting.png
+$ cas fetch --index https://imgs.xkcd.com/comics/curve_fitting.png
 sha256:34fc6626... https://imgs.xkcd.com/comics/curve_fitting.png
 ```
 

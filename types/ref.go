@@ -100,6 +100,10 @@ type SizedRef struct {
 	Size uint64 `json:"size,omitempty"`
 }
 
+func (sr *SizedRef) DataBlob() Ref {
+	return sr.Ref
+}
+
 func (sr *SizedRef) References() []Ref {
 	if sr.Ref.Zero() {
 		return nil

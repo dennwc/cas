@@ -140,6 +140,10 @@ type blobWriter struct {
 	hw  BlobWriter
 }
 
+func (w *blobWriter) Size() uint64 {
+	return w.hw.Size()
+}
+
 func (w *blobWriter) Write(p []byte) (int, error) {
 	_, err := w.hw.Write(p)
 	if err != nil {

@@ -25,6 +25,14 @@ func (e ErrRefMissmatch) Error() string {
 	return fmt.Sprintf("hash missmatch: exp: %v, got: %v", e.Exp, e.Got)
 }
 
+type ErrSizeMissmatch struct {
+	Exp, Got uint64
+}
+
+func (e ErrSizeMissmatch) Error() string {
+	return fmt.Sprintf("size missmatch: exp: %v, got: %v", e.Exp, e.Got)
+}
+
 type BlobStorage interface {
 	StatBlob(ctx context.Context, ref types.Ref) (uint64, error)
 	FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error)
@@ -46,6 +54,8 @@ type SchemaIterator interface {
 
 type BlobWriter interface {
 	io.Writer
+	// Size reports how many bytes were already written.
+	Size() uint64
 	// Complete returns the hash and size of the written blob.
 	// User should either Close the writer to discard the blob or Commit to store the blob.
 	// All writes after this call will fail.

@@ -8,10 +8,6 @@ func init() {
 	Register(&Multipart{})
 }
 
-type BlobWrapper interface {
-	DataBlob() types.Ref
-}
-
 type DirEntry struct {
 	Ref   types.Ref `json:"ref"`
 	Name  string    `json:"name"`
@@ -19,7 +15,7 @@ type DirEntry struct {
 }
 
 func (d *DirEntry) Size() uint64 {
-	return d.Stats[StatDataSize]
+	return d.Stats.Size()
 }
 
 func (d *DirEntry) References() []types.Ref {

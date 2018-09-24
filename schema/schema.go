@@ -34,6 +34,8 @@ func init() {
 	Register(&types.Pin{})
 }
 
+var _ BlobWrapper = (*types.SizedRef)(nil)
+
 const (
 	StatDataSize  = "size" // size of all raw blobs (excluding the schema)
 	StatDataCount = "cnt"  // number of full objects (logical trees)
@@ -42,10 +44,18 @@ const (
 // Stats is a collection of stat values.
 type Stats map[string]uint64
 
+func (s Stats) Size() uint64 {
+	return s[StatDataSize]
+}
+
 type Object interface {
 	// TODO: split into DependsOn and Describes
 
 	References() []types.Ref
+}
+
+type BlobWrapper interface {
+	DataBlob() types.Ref
 }
 
 var (

@@ -13,6 +13,7 @@ func init() {
 
 // List is an ordered list of entries of a specific type.
 type List struct {
+	Ref   *types.Ref  `json:"ref,omitempty"`   // ref of concatenated content, if applicable
 	Elem  string      `json:"elem,omitempty"`  // type of elements in List
 	List  []types.Ref `json:"list,omitempty"`  // List<Elem> or InlineList<Elem>
 	Stats Stats       `json:"stats,omitempty"` // optional stats
@@ -26,13 +27,15 @@ var _ json.Unmarshaler = (*InlineList)(nil)
 
 // InlineList is an inlined list of entries of a specific type.
 type InlineList struct {
-	Elem  string   `json:"elem,omitempty"`  // type of elements in List
-	List  []Object `json:"list,omitempty"`  // Elem
-	Stats Stats    `json:"stats,omitempty"` // optional stats
+	Ref   *types.Ref `json:"ref,omitempty"`   // ref of concatenated content, if applicable
+	Elem  string     `json:"elem,omitempty"`  // type of elements in List
+	List  []Object   `json:"list,omitempty"`  // Elem
+	Stats Stats      `json:"stats,omitempty"` // optional stats
 }
 
 func (l *InlineList) UnmarshalJSON(p []byte) error {
 	var list struct {
+		Ref   *types.Ref        `json:"ref"`
 		Elem  string            `json:"elem"`
 		List  []json.RawMessage `json:"list"`
 		Stats Stats             `json:"stats"`
@@ -40,7 +43,7 @@ func (l *InlineList) UnmarshalJSON(p []byte) error {
 	if err := json.Unmarshal(p, &list); err != nil {
 		return err
 	}
-	l.Elem, l.Stats = list.Elem, list.Stats
+	l.Ref, l.Elem, l.Stats = list.Ref, list.Elem, list.Stats
 	l.List = make([]Object, 0, len(list.List))
 	for _, edata := range list.List {
 		v, err := NewType(list.Elem)

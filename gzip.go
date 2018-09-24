@@ -48,6 +48,10 @@ type gzipIndexWriter struct {
 	hw   storage.BlobWriter
 }
 
+func (w *gzipIndexWriter) Size() uint64 {
+	return w.hw.Size()
+}
+
 func (w *gzipIndexWriter) Close() error {
 	if w.errc == nil {
 		return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -11,7 +12,31 @@ import (
 	"github.com/dennwc/cas/types"
 )
 
-func (s *Storage) storeHTTPContent(ctx context.Context, req *http.Request, index bool) (SizedRef, error) {
+// StoreAddr interprets an address as either a local FS path or URL and fetches the content.
+// It will create schema objects automatically.
+func (s *Storage) StoreAddr(ctx context.Context, addr string, conf *StoreConfig) (types.SizedRef, error) {
+	u, err := url.Parse(addr)
+	if err != nil {
+		return types.SizedRef{}, err
+	}
+	conf = checkConfig(conf)
+	if u.Scheme != "" {
+		return s.StoreURLContent(ctx, addr, conf)
+	}
+	return s.StoreFilePath(ctx, addr, conf)
+}
+
+func (s *Storage) StoreURLContent(ctx context.Context, url string, conf *StoreConfig) (SizedRef, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return SizedRef{}, err
+	}
+	return s.StoreHTTPContent(ctx, req, conf)
+}
+
+func (s *Storage) StoreHTTPContent(ctx context.Context, req *http.Request, conf *StoreConfig) (SizedRef, error) {
+	conf = checkConfig(conf)
+
 	req = req.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -22,12 +47,7 @@ func (s *Storage) storeHTTPContent(ctx context.Context, req *http.Request, index
 	if resp.StatusCode != http.StatusOK {
 		return SizedRef{}, fmt.Errorf("status: %v", resp.Status)
 	}
-	var sr SizedRef
-	if index {
-		sr, err = types.Hash(resp.Body)
-	} else {
-		sr, err = s.StoreBlob(ctx, types.Ref{}, resp.Body)
-	}
+	sr, err := s.StoreBlob(ctx, resp.Body, conf)
 	if err != nil {
 		return SizedRef{}, err
 	}
@@ -47,27 +67,4 @@ func (s *Storage) storeHTTPContent(ctx context.Context, req *http.Request, index
 		m.TS = &t
 	}
 	return s.StoreSchema(ctx, &m)
-}
-
-func (s *Storage) storeURLContent(ctx context.Context, url string, index bool) (SizedRef, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return SizedRef{}, err
-	}
-	return s.storeHTTPContent(ctx, req, index)
-}
-
-func (s *Storage) StoreURLContent(ctx context.Context, url string) (SizedRef, error) {
-	return s.storeURLContent(ctx, url, false)
-}
-
-func (s *Storage) IndexURLContent(ctx context.Context, url string) (SizedRef, error) {
-	return s.storeURLContent(ctx, url, true)
-}
-
-func (s *Storage) StoreHTTPContent(ctx context.Context, req *http.Request) (SizedRef, error) {
-	return s.storeHTTPContent(ctx, req, false)
-}
-func (s *Storage) IndexHTTPContent(ctx context.Context, req *http.Request) (SizedRef, error) {
-	return s.storeHTTPContent(ctx, req, true)
 }

@@ -16,6 +16,10 @@ type hashWriter struct {
 	ref  types.SizedRef
 }
 
+func (w *hashWriter) Size() uint64 {
+	return w.size
+}
+
 func (w *hashWriter) Write(p []byte) (int, error) {
 	if w.h == nil {
 		return 0, ErrBlobCompleted

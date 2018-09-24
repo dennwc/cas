@@ -2,7 +2,6 @@ package cas
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,10 +10,6 @@ import (
 	"github.com/dennwc/cas/schema"
 	"github.com/dennwc/cas/storage"
 	"github.com/dennwc/cas/types"
-)
-
-var (
-	typeDirEnt = schema.MustTypeOf(&schema.DirEntry{})
 )
 
 const (
@@ -31,93 +26,77 @@ func LocalFile(path string) FileDesc {
 	return &localFile{path: path}
 }
 
-func (s *Storage) storeAsFile(ctx context.Context, fd FileDesc, indexOnly bool) (*schema.DirEntry, error) {
-	// open the file, snapshot metadata
-	rc, xr, err := fd.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-
-	// if we have a reliable metadata - use it without reading the file
-	if !xr.Ref.Zero() {
-		// we know the ref beforehand
-		m := &schema.DirEntry{
-			Ref:  xr.Ref,
-			Name: fd.Name(),
-			Stats: Stats{
-				schema.StatDataSize: xr.Size,
-			},
-		}
-		if indexOnly {
-			// if only indexing - return the response directly
-			return m, nil
-		}
-		// if storing, check if blob store has this ref already
-		_, err := s.StatBlob(ctx, xr.Ref)
-		if err == nil {
-			return m, nil
-		}
-	}
-
-	// we don't have metadata available - need to read the file
-
-	var fw storage.BlobWriter
-	if indexOnly {
-		// indexing: just hash the file
-		fw = storage.Hash()
-	} else {
-		// storing the file
-		if lf, ok := fd.(*localFile); ok {
-			if l, ok := s.st.(*storage.LocalStorage); ok {
-				// clone file, if possible
-				if sr, err := l.ImportFile(ctx, lf.path); err == nil {
-					fd.SetRef(sr)
-					return &schema.DirEntry{
-						Ref:  sr.Ref,
-						Name: fd.Name(),
-						Stats: Stats{
-							schema.StatDataSize: sr.Size,
-						},
-					}, nil
-				}
-			}
-		}
-		// begin ordinary write procedure
-		var err error
-		fw, err = s.BeginBlob(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	defer fw.Close()
-
-	name := filepath.Base(fd.Name())
-
-	n, err := io.Copy(fw, rc)
-	if err != nil {
-		return nil, err
-	} else if uint64(n) != uint64(xr.Size) {
-		return nil, fmt.Errorf("file changed while writing it")
-	}
-	sr, err := fw.Complete()
-	if err != nil {
-		return nil, err
-	} else if sr.Size != uint64(xr.Size) {
-		return nil, fmt.Errorf("file changed while writing it")
-	}
-	fd.SetRef(sr)
-	err = fw.Commit()
+func (s *Storage) storeAsFile(ctx context.Context, fd FileDesc, conf *StoreConfig) (*schema.DirEntry, error) {
+	sr, err := s.storeFileContent(ctx, fd, conf)
 	if err != nil {
 		return nil, err
 	}
 	return &schema.DirEntry{
 		Ref:  sr.Ref,
-		Name: name,
+		Name: filepath.Base(fd.Name()),
 		Stats: Stats{
 			schema.StatDataSize: sr.Size,
 		},
 	}, nil
+}
+
+func (s *Storage) storeFileContent(ctx context.Context, fd FileDesc, conf *StoreConfig) (types.SizedRef, error) {
+	// open the file, snapshot metadata
+	rc, xr, err := fd.Open()
+	if err != nil {
+		return types.SizedRef{}, err
+	}
+	defer rc.Close()
+
+	// if we know the ref - check if we expect it, and if not - set as expected
+	if !xr.Ref.Zero() {
+		if err = conf.checkRef(xr); err != nil {
+			return types.SizedRef{}, err
+		}
+		conf.Expect = xr
+	}
+
+	// not splitting the file - can optimize in few cases
+	if conf.Split == nil {
+		// we know the ref beforehand, so we might return earlier
+		// if we are in indexing mode or we have this blob
+		if !xr.Ref.Zero() {
+			if conf.IndexOnly {
+				// if only indexing - return the response directly
+				return xr, nil
+			}
+			// if storing, check if a blob store has this ref already
+			_, err := s.StatBlob(ctx, xr.Ref)
+			if err == nil {
+				return xr, nil
+			}
+			// if not, continue as usual
+		}
+
+		if !conf.IndexOnly {
+			// if we are not indexing, storing a local file and the backend
+			// is a local FS, then try to import the file directly without copying it
+			if lf, ok := fd.(*localFile); ok {
+				if l, ok := s.st.(*storage.LocalStorage); ok {
+					// clone file, if possible
+					if sr, err := l.ImportFile(ctx, lf.path); err == nil {
+						// write resulting ref to source file, so we know it next time
+						fd.SetRef(sr)
+						return sr, nil
+					}
+				}
+			}
+		}
+	}
+
+	sr, err := s.StoreBlob(ctx, rc, conf)
+	if err != nil {
+		return types.SizedRef{}, err
+	}
+	if conf.Split == nil {
+		fd.SetRef(sr)
+	}
+	return sr, nil
 }
 
 func (s *Storage) storeDirList(ctx context.Context, list []schema.DirEntry) (SizedRef, Stats, error) {
@@ -160,7 +139,7 @@ func (s *Storage) storeDirJoin(ctx context.Context, refs []Ref, list []schema.Li
 	return sr, m, nil
 }
 
-func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRef, Stats, error) {
+func (s *Storage) storeDir(ctx context.Context, dir string, conf *StoreConfig) (SizedRef, Stats, error) {
 	d, err := os.Open(dir)
 	if err != nil {
 		return SizedRef{}, nil, err
@@ -182,7 +161,7 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 			}
 			fpath := filepath.Join(dir, fi.Name())
 			if fi.IsDir() {
-				sr, st, err := s.storeDir(ctx, fpath, index)
+				sr, st, err := s.storeDir(ctx, fpath, conf)
 				if err != nil {
 					return SizedRef{}, nil, err
 				}
@@ -191,7 +170,7 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 					Stats: st,
 				})
 			} else {
-				ent, err := s.storeAsFile(ctx, LocalFile(fpath), index)
+				ent, err := s.storeAsFile(ctx, LocalFile(fpath), conf)
 				if err != nil {
 					return SizedRef{}, nil, err
 				}
@@ -271,41 +250,29 @@ func (s *Storage) storeDir(ctx context.Context, dir string, index bool) (SizedRe
 	return sr, top.Stats, nil
 }
 
-func (s *Storage) IndexAsFile(ctx context.Context, fd FileDesc) (SizedRef, error) {
-	m, err := s.storeAsFile(ctx, fd, true)
+func (s *Storage) StoreAsFile(ctx context.Context, fd FileDesc, conf *StoreConfig) (SizedRef, error) {
+	m, err := s.storeAsFile(ctx, fd, conf)
 	if err != nil {
 		return SizedRef{}, err
 	}
 	return s.StoreSchema(ctx, m)
 }
 
-func (s *Storage) StoreAsFile(ctx context.Context, fd FileDesc) (SizedRef, error) {
-	m, err := s.storeAsFile(ctx, fd, false)
-	if err != nil {
-		return SizedRef{}, err
-	}
-	return s.StoreSchema(ctx, m)
-}
-
-func (s *Storage) storeFilePath(ctx context.Context, path string, index bool) (SizedRef, error) {
+func (s *Storage) StoreFilePath(ctx context.Context, path string, conf *StoreConfig) (SizedRef, error) {
+	conf = checkConfig(conf)
 	fi, err := os.Stat(path)
 	if err != nil {
 		return SizedRef{}, err
 	}
 	if fi.IsDir() {
-		sr, _, err := s.storeDir(ctx, path, index)
+		sr, _, err := s.storeDir(ctx, path, conf)
 		return sr, err
 	}
-	ent, err := s.storeAsFile(ctx, LocalFile(path), index)
+	ent, err := s.storeAsFile(ctx, LocalFile(path), conf)
+	if err != nil {
+		return SizedRef{}, err
+	}
 	return SizedRef{Ref: ent.Ref, Size: ent.Size()}, err
-}
-
-func (s *Storage) IndexFilePath(ctx context.Context, path string) (SizedRef, error) {
-	return s.storeFilePath(ctx, path, true)
-}
-
-func (s *Storage) StoreFilePath(ctx context.Context, path string) (SizedRef, error) {
-	return s.storeFilePath(ctx, path, false)
 }
 
 type localFile struct {

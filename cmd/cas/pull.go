@@ -14,7 +14,7 @@ func init() {
 	cmd := &cobra.Command{
 		Use:   "pull",
 		Short: "store the URL or file in the content-addressable storage under a named pin",
-		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, _ *pflag.FlagSet, args []string) error {
+		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, flags *pflag.FlagSet, args []string) error {
 			if len(args) == 0 || len(args) > 2 {
 				return fmt.Errorf("expected 1 or 2 arguments")
 			}
@@ -25,7 +25,9 @@ func init() {
 				addr = args[1]
 			}
 
-			sr, err := s.StoreAddr(ctx, addr, false)
+			conf := storeConfigFromFlags(flags)
+
+			sr, err := s.StoreAddr(ctx, addr, conf)
 			if err != nil {
 				return err
 			}
@@ -36,5 +38,6 @@ func init() {
 			return nil
 		}),
 	}
+	registerStoreConfFlags(cmd.Flags())
 	Root.AddCommand(cmd)
 }

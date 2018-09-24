@@ -40,6 +40,7 @@ Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands
     - Stores results in file attributes (cache)
 - Support for large archives
     - Large contiguous files (> TB)
+    - Large multipart files (> TB)
     - Large directories (> millions of files)
     - Zero-copy file fetch (BTRFS)
 - Integrations
@@ -55,8 +56,8 @@ Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands
 **Planned:**
 
 - Support for large multipart files (> TB)
-    - Support blob splitters (size threshold, rolling checksum, new line, etc)
-
+    - Support multilevel parts
+    - Support blob splitters (rolling checksum, new line, etc)
 - Remote storage
     - GCS, AWS, etc
     - Self-hosted HTTP CAS server

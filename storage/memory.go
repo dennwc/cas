@@ -60,6 +60,10 @@ type memWriter struct {
 	sr  types.SizedRef
 }
 
+func (w *memWriter) Size() uint64 {
+	return w.hw.Size()
+}
+
 func (w *memWriter) Write(p []byte) (int, error) {
 	if n, err := w.hw.Write(p); err != nil {
 		return n, err
