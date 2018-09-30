@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -64,6 +65,9 @@ func (s *LocalStorage) blobPath(ref types.Ref) string {
 }
 
 func (s *LocalStorage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
+	if ref.Zero() {
+		return 0, fmt.Errorf("zero ref passed to stat")
+	}
 	fi, err := os.Stat(s.blobPath(ref))
 	if err != nil {
 		return 0, err
@@ -72,6 +76,9 @@ func (s *LocalStorage) StatBlob(ctx context.Context, ref types.Ref) (uint64, err
 }
 
 func (s *LocalStorage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
+	if ref.Zero() {
+		return nil, 0, fmt.Errorf("zero ref passed to fetch")
+	}
 	f, err := os.Open(s.blobPath(ref))
 	if os.IsNotExist(err) {
 		return nil, 0, ErrNotFound
@@ -250,17 +257,22 @@ func (it *dirIterator) Next() bool {
 		})
 		it.infos = infos
 	}
-	if len(it.infos) == 0 {
-		return false
+	for {
+		if len(it.infos) == 0 {
+			return false
+		}
+		info := it.infos[0]
+		it.infos = it.infos[1:]
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		it.sr.Size = uint64(info.Size())
+		it.sr.Ref, it.err = types.ParseRef(info.Name())
+		if it.err != nil {
+			return false
+		}
+		return true
 	}
-	info := it.infos[0]
-	it.infos = it.infos[1:]
-	it.sr.Size = uint64(info.Size())
-	it.sr.Ref, it.err = types.ParseRef(info.Name())
-	if it.err != nil {
-		return false
-	}
-	return true
 }
 
 func (it *dirIterator) Err() error {
@@ -388,6 +400,9 @@ func (s *LocalStorage) Reindex(ctx context.Context, force bool) error {
 }
 
 func (s *LocalStorage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
+	if ref.Zero() {
+		return nil, 0, fmt.Errorf("zero ref passed to fetch schema")
+	}
 	if typ, err := xattr.GetString(s.blobPath(ref), xattrSchemaType); err == nil && typ == "" {
 		return nil, 0, schema.ErrNotSchema
 	}
