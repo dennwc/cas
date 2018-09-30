@@ -24,6 +24,9 @@ type OpenOptions struct {
 func Open(opt OpenOptions) (*Storage, error) {
 	s := opt.Storage
 	if s == nil {
+		if opt.Dir == "" {
+			opt.Dir = DefaultDir
+		}
 		var err error
 		s, err = storage.NewLocal(opt.Dir, opt.Create)
 		if err != nil {
