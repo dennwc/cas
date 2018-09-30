@@ -7,8 +7,8 @@ import (
 )
 
 func init() {
-	Register(&List{})
-	Register(&InlineList{})
+	registerCAS(&List{})
+	registerCAS(&InlineList{})
 }
 
 // List is an ordered list of entries of a specific type.

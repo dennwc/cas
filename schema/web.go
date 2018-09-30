@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	Register(&WebContent{})
+	registerCAS(&WebContent{})
 }
 
 var _ BlobWrapper = (*WebContent)(nil)

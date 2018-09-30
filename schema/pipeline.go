@@ -3,7 +3,7 @@ package schema
 import "github.com/dennwc/cas/types"
 
 func init() {
-	Register(&TransformOp{})
+	registerCAS(&TransformOp{})
 }
 
 type TransformOp struct {

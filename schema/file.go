@@ -3,9 +3,9 @@ package schema
 import "github.com/dennwc/cas/types"
 
 func init() {
-	Register(&DirEntry{})
-	Register(&Compressed{})
-	Register(&Multipart{})
+	registerCAS(&DirEntry{})
+	registerCAS(&Compressed{})
+	registerCAS(&Multipart{})
 }
 
 type DirEntry struct {

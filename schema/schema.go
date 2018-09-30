@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/ioutil"
 	"reflect"
-	"strings"
 
 	"github.com/dennwc/cas/types"
 )
@@ -29,9 +28,9 @@ const (
 )
 
 func init() {
-	Register(&types.SizedRef{})
-	Register(&types.SchemaRef{})
-	Register(&types.Pin{})
+	registerCAS(&types.SizedRef{})
+	registerCAS(&types.SchemaRef{})
+	registerCAS(&types.Pin{})
 }
 
 var _ BlobWrapper = (*types.SizedRef)(nil)
@@ -59,15 +58,27 @@ type BlobWrapper interface {
 }
 
 var (
-	typesMap = make(map[string]reflect.Type)
+	typesMap   = make(map[string]reflect.Type)
+	typeToName = make(map[reflect.Type]string)
 )
 
-func Register(o Object) {
+func registerCAS(o Object) {
 	rt := reflect.TypeOf(o)
 	if rt.Kind() == reflect.Ptr {
 		rt = rt.Elem()
 	}
-	typesMap[rt.Name()] = rt
+	name := casNS + rt.Name()
+	typesMap[name] = rt
+	typeToName[rt] = name
+}
+
+func RegisterName(name string, o Object) {
+	rt := reflect.TypeOf(o)
+	if rt.Kind() == reflect.Ptr {
+		rt = rt.Elem()
+	}
+	typesMap[name] = rt
+	typeToName[rt] = name
 }
 
 func TypeOf(o Object) (string, error) {
@@ -75,11 +86,11 @@ func TypeOf(o Object) (string, error) {
 	if rt.Kind() == reflect.Ptr {
 		rt = rt.Elem()
 	}
-	t, ok := typesMap[rt.Name()]
-	if !ok || t != rt {
+	name, ok := typeToName[rt]
+	if !ok {
 		return "", fmt.Errorf("unsupported schema type: %T", o)
 	}
-	return casNS + rt.Name(), nil
+	return name, nil
 }
 
 func MustTypeOf(o Object) string {
@@ -91,10 +102,6 @@ func MustTypeOf(o Object) string {
 }
 
 func NewType(typ string) (Object, error) {
-	if !strings.HasPrefix(typ, casNS) {
-		return nil, fmt.Errorf("unsupported namespace: %q", typ)
-	}
-	typ = strings.TrimPrefix(typ, casNS)
 	rt, ok := typesMap[typ]
 	if !ok {
 		return nil, fmt.Errorf("unsupported schema type: %q", typ)
@@ -138,7 +145,7 @@ func checkSchema(r io.Reader) (io.Reader, error) {
 	m := make([]byte, MagicSize)
 	_, err := io.ReadFull(r, m)
 	if err != nil {
-		return nil, fmt.Errorf("cannot decode schema object: %v", err)
+		return nil, fmt.Errorf("cannot check schema object: %v", err)
 	}
 	if !IsSchema(m) {
 		return nil, ErrNotSchema
