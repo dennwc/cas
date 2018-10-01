@@ -62,8 +62,8 @@ var (
 
 type URL url.URL
 
-func (u *URL) String() string {
-	su := (*url.URL)(u)
+func (u URL) String() string {
+	su := url.URL(u)
 	return su.String()
 }
 func (u URL) MarshalJSON() ([]byte, error) {

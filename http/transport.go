@@ -211,12 +211,15 @@ func (t *Transport) requestMatches(req *http.Request, obj *Request) bool {
 	return true
 }
 
+// checkReqCache checks if this request is cached and returns a ref of the response, if any.
 func (t *Transport) checkReqCache(_ types.Ref, req *http.Request) (types.Ref, error) {
 	// in fact, we cannot use request ref because it might contain additional headers
 	// instead, we will check all request object and match them according to our rules
 	ctx := req.Context()
 	it := t.s.IterateSchema(ctx, requestType)
 	defer it.Close()
+
+	var last error
 	for it.Next() {
 		obj, err := it.Decode()
 		if err != nil {
@@ -227,10 +230,18 @@ func (t *Transport) checkReqCache(_ types.Ref, req *http.Request) (types.Ref, er
 			return types.Ref{}, fmt.Errorf("unexpected type: %T", obj)
 		}
 		if t.requestMatches(req, r) {
-			return it.SizedRef().Ref, nil
+			// it's not enough to match it, it should also have a response
+			respRef, err := t.findResponseFor(ctx, it.SizedRef().Ref)
+			if err != nil {
+				last = err
+				continue
+			} else if respRef.Zero() {
+				continue
+			}
+			return respRef, nil
 		}
 	}
-	return types.Ref{}, nil
+	return types.Ref{}, last
 }
 
 func (t *Transport) findResponseFor(ctx context.Context, req types.Ref) (types.Ref, error) {
@@ -273,11 +284,7 @@ func (t *Transport) reconstruct(ctx context.Context, r *Response) (*http.Respons
 
 func (t *Transport) serveFromCache(ref types.Ref, req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-	reqRef, err := t.checkReqCache(ref, req)
-	if err != nil || reqRef.Zero() {
-		return nil, err
-	}
-	respRef, err := t.findResponseFor(ctx, reqRef)
+	respRef, err := t.checkReqCache(ref, req)
 	if err != nil || respRef.Zero() {
 		return nil, err
 	}
