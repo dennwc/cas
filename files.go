@@ -8,7 +8,7 @@ import (
 	"sort"
 
 	"github.com/dennwc/cas/schema"
-	"github.com/dennwc/cas/storage"
+	"github.com/dennwc/cas/storage/local"
 	"github.com/dennwc/cas/types"
 )
 
@@ -77,7 +77,7 @@ func (s *Storage) storeFileContent(ctx context.Context, fd FileDesc, conf *Store
 			// if we are not indexing, storing a local file and the backend
 			// is a local FS, then try to import the file directly without copying it
 			if lf, ok := fd.(*localFile); ok {
-				if l, ok := s.st.(*storage.LocalStorage); ok {
+				if l, ok := s.st.(*local.Storage); ok {
 					// clone file, if possible
 					if sr, err := l.ImportFile(ctx, lf.path); err == nil {
 						// write resulting ref to source file, so we know it next time

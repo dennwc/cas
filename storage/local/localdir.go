@@ -1,4 +1,4 @@
-package storage
+package local
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/dennwc/cas/cow"
 	"github.com/dennwc/cas/schema"
+	"github.com/dennwc/cas/storage"
 	"github.com/dennwc/cas/types"
 	"github.com/dennwc/cas/xattr"
 )
@@ -26,7 +27,7 @@ const (
 	roPerm = 0444
 )
 
-func NewLocal(dir string, create bool) (*LocalStorage, error) {
+func New(dir string, create bool) (*Storage, error) {
 	_, err := os.Stat(dir)
 	if os.IsNotExist(err) {
 		if !create {
@@ -48,23 +49,23 @@ func NewLocal(dir string, create bool) (*LocalStorage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LocalStorage{dir: dir}, nil
+	return &Storage{dir: dir}, nil
 }
 
-type LocalStorage struct {
+type Storage struct {
 	dir string
 }
 
-func (s *LocalStorage) tmpFile() (*os.File, error) {
+func (s *Storage) tmpFile() (*os.File, error) {
 	dir := filepath.Join(s.dir, dirTmp)
 	return ioutil.TempFile(dir, "")
 }
 
-func (s *LocalStorage) blobPath(ref types.Ref) string {
+func (s *Storage) blobPath(ref types.Ref) string {
 	return filepath.Join(s.dir, dirBlobs, ref.String())
 }
 
-func (s *LocalStorage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
+func (s *Storage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
 	if ref.Zero() {
 		return 0, fmt.Errorf("zero ref passed to stat")
 	}
@@ -75,13 +76,13 @@ func (s *LocalStorage) StatBlob(ctx context.Context, ref types.Ref) (uint64, err
 	return uint64(fi.Size()), nil
 }
 
-func (s *LocalStorage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
+func (s *Storage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
 	if ref.Zero() {
 		return nil, 0, fmt.Errorf("zero ref passed to fetch")
 	}
 	f, err := os.Open(s.blobPath(ref))
 	if os.IsNotExist(err) {
-		return nil, 0, ErrNotFound
+		return nil, 0, storage.ErrNotFound
 	} else if err != nil {
 		return nil, 0, err
 	}
@@ -93,7 +94,7 @@ func (s *LocalStorage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadClo
 	return f, uint64(fi.Size()), nil
 }
 
-func (s *LocalStorage) ImportFile(ctx context.Context, path string) (types.SizedRef, error) {
+func (s *Storage) ImportFile(ctx context.Context, path string) (types.SizedRef, error) {
 	// first, use CoW to copy the file into temp directory
 	f, err := s.tmpFile()
 	if err != nil {
@@ -128,7 +129,7 @@ func (s *LocalStorage) ImportFile(ctx context.Context, path string) (types.Sized
 	return sr, nil
 }
 
-func (s *LocalStorage) BeginBlob(ctx context.Context) (BlobWriter, error) {
+func (s *Storage) BeginBlob(ctx context.Context) (storage.BlobWriter, error) {
 	f, err := s.tmpFile()
 	if err != nil {
 		return nil, err
@@ -136,15 +137,15 @@ func (s *LocalStorage) BeginBlob(ctx context.Context) (BlobWriter, error) {
 	if t, ok := ctx.Deadline(); ok {
 		f.SetWriteDeadline(t)
 	}
-	return &blobWriter{s: s, ctx: ctx, f: f, hw: Hash()}, nil
+	return &blobWriter{s: s, ctx: ctx, f: f, hw: storage.Hash()}, nil
 }
 
 type blobWriter struct {
-	s   *LocalStorage
+	s   *Storage
 	ctx context.Context
 	f   *os.File
 	sr  types.SizedRef
-	hw  BlobWriter
+	hw  storage.BlobWriter
 }
 
 func (w *blobWriter) Size() uint64 {
@@ -157,7 +158,7 @@ func (w *blobWriter) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	if w.f == nil {
-		return 0, ErrBlobCompleted
+		return 0, storage.ErrBlobCompleted
 	}
 	return w.f.Write(p)
 }
@@ -197,7 +198,7 @@ func (w *blobWriter) Commit() error {
 		return err
 	}
 	if w.f == nil {
-		return ErrBlobDiscarded
+		return storage.ErrBlobDiscarded
 	}
 	if w.sr.Ref.Zero() {
 		if _, err := w.Complete(); err != nil {
@@ -219,12 +220,12 @@ func (w *blobWriter) Commit() error {
 	return nil
 }
 
-func (s *LocalStorage) IterateBlobs(ctx context.Context) Iterator {
+func (s *Storage) IterateBlobs(ctx context.Context) storage.Iterator {
 	return &dirIterator{s: s, dir: filepath.Join(s.dir, dirBlobs)}
 }
 
 type dirIterator struct {
-	s   *LocalStorage
+	s   *Storage
 	dir string
 
 	err   error
@@ -288,34 +289,34 @@ func (it *dirIterator) Close() error {
 	return nil
 }
 
-func (s *LocalStorage) pinPath(name string) string {
+func (s *Storage) pinPath(name string) string {
 	return filepath.Join(s.dir, dirPins, name)
 }
 
-func (s *LocalStorage) SetPin(ctx context.Context, name string, ref types.Ref) error {
+func (s *Storage) SetPin(ctx context.Context, name string, ref types.Ref) error {
 	return ioutil.WriteFile(s.pinPath(name), []byte(ref.String()), 0644)
 }
 
-func (s *LocalStorage) DeletePin(ctx context.Context, name string) error {
+func (s *Storage) DeletePin(ctx context.Context, name string) error {
 	return os.Remove(s.pinPath(name))
 }
 
-func (s *LocalStorage) GetPin(ctx context.Context, name string) (types.Ref, error) {
+func (s *Storage) GetPin(ctx context.Context, name string) (types.Ref, error) {
 	data, err := ioutil.ReadFile(s.pinPath(name))
 	if os.IsNotExist(err) {
-		return types.Ref{}, ErrNotFound
+		return types.Ref{}, storage.ErrNotFound
 	} else if err != nil {
 		return types.Ref{}, err
 	}
 	return types.ParseRef(string(data))
 }
 
-func (s *LocalStorage) IteratePins(ctx context.Context) PinIterator {
+func (s *Storage) IteratePins(ctx context.Context) storage.PinIterator {
 	return &pinIterator{s: s, dir: filepath.Join(s.dir, dirPins)}
 }
 
 type pinIterator struct {
-	s   *LocalStorage
+	s   *Storage
 	dir string
 
 	err   error
@@ -379,7 +380,7 @@ func (it *pinIterator) Close() error {
 	return nil
 }
 
-func (s *LocalStorage) IterateSchema(ctx context.Context, typs ...string) SchemaIterator {
+func (s *Storage) IterateSchema(ctx context.Context, typs ...string) storage.SchemaIterator {
 	var filter map[string]struct{}
 	if len(typs) != 0 {
 		filter = make(map[string]struct{})
@@ -390,7 +391,7 @@ func (s *LocalStorage) IterateSchema(ctx context.Context, typs ...string) Schema
 	return &schemaIterator{s: s, ctx: ctx, typs: filter, dir: filepath.Join(s.dir, dirBlobs)}
 }
 
-func (s *LocalStorage) Reindex(ctx context.Context, force bool) error {
+func (s *Storage) Reindex(ctx context.Context, force bool) error {
 	it := &schemaIterator{s: s, ctx: ctx, force: force, dir: filepath.Join(s.dir, dirBlobs)}
 	defer it.Close()
 	for it.Next() {
@@ -399,7 +400,7 @@ func (s *LocalStorage) Reindex(ctx context.Context, force bool) error {
 	return it.Err()
 }
 
-func (s *LocalStorage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
+func (s *Storage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
 	if ref.Zero() {
 		return nil, 0, fmt.Errorf("zero ref passed to fetch schema")
 	}
@@ -410,7 +411,7 @@ func (s *LocalStorage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadC
 }
 
 type schemaIterator struct {
-	s     *LocalStorage
+	s     *Storage
 	ctx   context.Context
 	typs  map[string]struct{}
 	dir   string

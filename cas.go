@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 
 	"github.com/dennwc/cas/storage"
+	"github.com/dennwc/cas/storage/local"
 	"github.com/dennwc/cas/types"
 )
 
@@ -28,7 +29,7 @@ func Open(opt OpenOptions) (*Storage, error) {
 			opt.Dir = DefaultDir
 		}
 		var err error
-		s, err = storage.NewLocal(opt.Dir, opt.Create)
+		s, err = local.New(opt.Dir, opt.Create)
 		if err != nil {
 			return nil, err
 		}
