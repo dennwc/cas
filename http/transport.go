@@ -286,6 +286,7 @@ func (t *Transport) findResponseFor(ctx context.Context, req types.Ref) (types.R
 func (t *Transport) reconstruct(ctx context.Context, r *Response) (*http.Response, error) {
 	resp := &http.Response{
 		StatusCode:    r.Status,
+		Status:        fmt.Sprintf("%d %s", r.Status, http.StatusText(r.Status)),
 		Header:        http.Header(r.Header),
 		Trailer:       http.Header(r.Trailer),
 		ContentLength: int64(r.Body.Size),
