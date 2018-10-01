@@ -36,6 +36,8 @@ type Transport struct {
 	tr http.RoundTripper
 
 	matchHeader []string
+	reqFilter   func(*http.Request) bool
+	respFilter  func(*http.Response) bool
 }
 
 // MatchHeaders adds additional headers that will be used to match requests versus cache entries.
@@ -48,8 +50,23 @@ func (t *Transport) SetTransport(tr http.RoundTripper) {
 	t.tr = tr
 }
 
+// RequestFilter allows to ignore some requests so they are not stored in CAS.
+// Caller should not inspect the body, or should replace it with a new copy.
+func (t *Transport) RequestFilter(fnc func(*http.Request) bool) {
+	t.reqFilter = fnc
+}
+
+// ResponseFilter allows to ignore some responses so they are not stored in CAS.
+// Caller should not inspect the body, or should replace it with a new copy.
+func (t *Transport) ResponseFilter(fnc func(*http.Response) bool) {
+	t.respFilter = fnc
+}
+
 // RoundTrip implements http.RoundTripper.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.reqFilter != nil && !t.reqFilter(req) {
+		return t.tr.RoundTrip(req)
+	}
 	ctx := req.Context()
 	reqRef, err := t.storeRequest(req)
 	if err != nil {
@@ -64,6 +81,9 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.tr.RoundTrip(req)
 	if err != nil {
 		return nil, err
+	}
+	if t.respFilter != nil && !t.respFilter(resp) {
+		return resp, nil
 	}
 	respRef, err := t.storeResponse(req.Context(), resp)
 	if err != nil {
