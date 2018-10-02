@@ -131,6 +131,7 @@ type PinStorage interface {
 type Storage interface {
 	BlobStorage
 	PinStorage
+	Close() error
 }
 
 // BaseIterator is a common interface for all iterators.

@@ -87,6 +87,8 @@ type Storage struct {
 	dir string
 }
 
+func (s *Storage) Close() error { return nil }
+
 func (s *Storage) tmpFile() (*os.File, error) {
 	dir := filepath.Join(s.dir, dirTmp)
 	return ioutil.TempFile(dir, "blob_")

@@ -55,6 +55,8 @@ type Client struct {
 	base string
 }
 
+func (c *Client) Close() error { return nil }
+
 // SetHTTPClient allows to set a custom HTTP client that will be used to send requests.
 func (c *Client) SetHTTPClient(cli *http.Client) {
 	c.cli = cli

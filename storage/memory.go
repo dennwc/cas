@@ -27,6 +27,8 @@ type memStorage struct {
 	types map[types.Ref]string
 }
 
+func (s *memStorage) Close() error { return nil }
+
 func (s *memStorage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
 	s.mu.RLock()
 	b, ok := s.blobs[ref]

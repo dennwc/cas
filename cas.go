@@ -124,6 +124,10 @@ type Storage struct {
 	index storage.BlobIndexer
 }
 
+func (s *Storage) Close() error {
+	return s.st.Close()
+}
+
 func (s *Storage) SetPin(ctx context.Context, name string, ref types.Ref) error {
 	if name == "" {
 		name = DefaultPin
