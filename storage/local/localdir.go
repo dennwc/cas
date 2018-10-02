@@ -31,6 +31,26 @@ var (
 	_ storage.BlobIndexer = (*Storage)(nil)
 )
 
+func init() {
+	storage.RegisterConfig("cas:LocalDirConfig", &Config{})
+}
+
+type Config struct {
+	Dir string `json:"dir"`
+}
+
+func (c *Config) References() []types.Ref {
+	return nil
+}
+
+func (c *Config) OpenStorage(ctx context.Context) (storage.Storage, error) {
+	s, err := New(c.Dir, false)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 func New(dir string, create bool) (*Storage, error) {
 	_, err := os.Stat(dir)
 	if err == nil {

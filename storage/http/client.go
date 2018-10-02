@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/dennwc/cas/storage"
@@ -15,6 +16,26 @@ import (
 var (
 	_ storage.Storage = (*Client)(nil)
 )
+
+func init() {
+	storage.RegisterConfig("cas:HTTPClientConfig", &Config{})
+}
+
+type Config struct {
+	URL string `json:"url"`
+}
+
+func (c *Config) References() []types.Ref {
+	return nil
+}
+
+func (c *Config) OpenStorage(ctx context.Context) (storage.Storage, error) {
+	_, err := url.Parse(c.URL)
+	if err != nil {
+		return nil, err
+	}
+	return NewClient(c.URL), nil
+}
 
 // NewClient creates a CAS HTTP client with a given base address.
 //

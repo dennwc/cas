@@ -5,7 +5,10 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 
+	"github.com/dennwc/cas/config"
 	"github.com/dennwc/cas/storage"
 	"github.com/dennwc/cas/storage/local"
 	"github.com/dennwc/cas/types"
@@ -16,23 +19,90 @@ const (
 	DefaultPin = "root"
 )
 
+// Init configures a CAS and stores the metadata in a specified directory.
+// If directory path is empty, default path will be used.
+// Relative paths in a local storage configs will be interpreted relative to the config.
+func Init(dir string, conf *config.Config) error {
+	if dir == "" {
+		dir = DefaultDir
+	}
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		return err
+	}
+	confPath := filepath.Join(dir, config.DefaultConfig)
+	_, err = config.ReadConfig(confPath)
+	if err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if conf == nil {
+		conf = &config.Config{}
+	}
+	if conf.Storage == nil {
+		// default config - store data in the same dir
+		conf.Storage = &local.Config{
+			Dir: ".", // same dir as config
+		}
+	}
+	err = config.WriteConfig(confPath, conf)
+	if err != nil {
+		return err
+	}
+	// if a storage is local, initialize it as well
+	c, ok := conf.Storage.(*local.Config)
+	if !ok {
+		return nil
+	}
+	// paths are relative to the config
+	path := c.Dir
+	if path == "" || !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	s, err := local.New(path, true)
+	if err != nil {
+		return err
+	}
+	_ = s // nothing to close
+	return nil
+}
+
 type OpenOptions struct {
 	Dir     string
-	Create  bool
 	Storage storage.Storage
 }
 
 func Open(opt OpenOptions) (*Storage, error) {
-	s := opt.Storage
-	if s == nil {
-		if opt.Dir == "" {
-			opt.Dir = DefaultDir
+	if opt.Storage != nil {
+		return New(opt.Storage)
+	}
+	if opt.Dir == "" {
+		opt.Dir = DefaultDir
+	}
+	confPath := filepath.Join(opt.Dir, config.DefaultConfig)
+	conf, err := config.ReadConfig(confPath)
+	if os.IsNotExist(err) {
+		// preserve compatibility - pretend we have a default config
+		err = nil
+		conf = &config.Config{
+			Storage: &local.Config{
+				Dir: ".", // same dir as config
+			},
 		}
-		var err error
-		s, err = local.New(opt.Dir, opt.Create)
-		if err != nil {
-			return nil, err
+	}
+	if err != nil {
+		return nil, err
+	}
+	// paths of a local storage are relative to the config
+	if c, ok := conf.Storage.(*local.Config); ok {
+		if c.Dir == "" || !filepath.IsAbs(c.Dir) {
+			c.Dir = filepath.Join(opt.Dir, c.Dir)
 		}
+	}
+	s, err := conf.Storage.OpenStorage(context.TODO())
+	if err != nil {
+		return nil, err
 	}
 	return New(s)
 }
