@@ -2,7 +2,6 @@ package local
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -79,7 +78,7 @@ func (s *Storage) blobPath(ref types.Ref) string {
 
 func (s *Storage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
 	if ref.Zero() {
-		return 0, fmt.Errorf("zero ref passed to stat")
+		return 0, storage.ErrInvalidRef
 	}
 	fi, err := os.Stat(s.blobPath(ref))
 	if err != nil {
@@ -90,7 +89,7 @@ func (s *Storage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
 
 func (s *Storage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
 	if ref.Zero() {
-		return nil, 0, fmt.Errorf("zero ref passed to fetch")
+		return nil, 0, storage.ErrInvalidRef
 	}
 	f, err := os.Open(s.blobPath(ref))
 	if os.IsNotExist(err) {
@@ -414,7 +413,7 @@ func (s *Storage) ReindexSchema(ctx context.Context, force bool) error {
 
 func (s *Storage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
 	if ref.Zero() {
-		return nil, 0, fmt.Errorf("zero ref passed to fetch schema")
+		return nil, 0, storage.ErrInvalidRef
 	}
 	if typ, err := xattr.GetString(s.blobPath(ref), xattrSchemaType); err == nil && typ == "" {
 		return nil, 0, schema.ErrNotSchema
