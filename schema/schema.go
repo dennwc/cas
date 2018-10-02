@@ -24,6 +24,7 @@ const (
 )
 
 const (
+	// MagicSize is a maximal size of a magic prefix of schema blobs.
 	MagicSize = len(magic)
 )
 
@@ -47,6 +48,7 @@ func (s Stats) Size() uint64 {
 	return s[StatDataSize]
 }
 
+// Object is a generic schema object for CAS.
 type Object interface {
 	// TODO: split into DependsOn and Describes
 
@@ -72,6 +74,7 @@ func registerCAS(o Object) {
 	typeToName[rt] = name
 }
 
+// RegisterName associates a schema object with a given type name.
 func RegisterName(name string, o Object) {
 	rt := reflect.TypeOf(o)
 	if rt.Kind() == reflect.Ptr {
@@ -81,6 +84,7 @@ func RegisterName(name string, o Object) {
 	typeToName[rt] = name
 }
 
+// TypeOf returns the type of an object.
 func TypeOf(o Object) (string, error) {
 	rt := reflect.TypeOf(o)
 	if rt.Kind() == reflect.Ptr {
@@ -93,6 +97,7 @@ func TypeOf(o Object) (string, error) {
 	return name, nil
 }
 
+// MustTypeOf is the same as TypeOf but panics on error.
 func MustTypeOf(o Object) string {
 	typ, err := TypeOf(o)
 	if err != nil {
@@ -101,6 +106,8 @@ func MustTypeOf(o Object) string {
 	return typ
 }
 
+// NewType creates a schema object with a specified type.
+// The type should be registered with RegisterName.
 func NewType(typ string) (Object, error) {
 	rt, ok := typesMap[typ]
 	if !ok {
@@ -109,6 +116,7 @@ func NewType(typ string) (Object, error) {
 	return reflect.New(rt).Interface().(Object), nil
 }
 
+// Encode writes a schema blob to w.
 func Encode(w io.Writer, o Object) error {
 	typ, err := TypeOf(o)
 	if err != nil {
@@ -153,12 +161,18 @@ func checkSchema(r io.Reader) (io.Reader, error) {
 	return io.MultiReader(bytes.NewReader(m), r), nil
 }
 
+// Decode decodes a schema object from a stream. It will strictly validate formatting of the content.
 func Decode(r io.Reader) (Object, error) {
 	var err error
 	r, err = checkSchema(r)
 	if err != nil {
 		return nil, err
 	}
+	return DecodeJSON(r)
+}
+
+// DecodeJSON decodes a JSON config. It will not validate JSON formatting as Decode does.
+func DecodeJSON(r io.Reader) (Object, error) {
 	obj, err := decode(r)
 	if err != nil {
 		return nil, fmt.Errorf("cannot decode schema object: %v", err)
@@ -198,6 +212,8 @@ func decodeType(r io.Reader) (string, []byte, error) {
 	return h.Type, data, nil
 }
 
+// DecodeType decodes the type of an object from the reader. Reader will not be usable after the call.
+// See PeekType to reserve a reader in a usable state.
 func DecodeType(r io.Reader) (string, error) {
 	var err error
 	r, err = checkSchema(r)
