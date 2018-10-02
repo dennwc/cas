@@ -44,7 +44,10 @@ Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands
     - Large directories (> millions of files)
     - Zero-copy file fetch (BTRFS)
 - Integrations
-    - Can index web content
+    - Can index and sync web content
+    - HTTP(S) caching (as a Go library)
+- Remote storage
+    - Self-hosted HTTP CAS server (read-only)
 - Usability
     - Mutable objects (pins)
     - Local storage in Git fashion
@@ -60,9 +63,7 @@ Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands
     - Support blob splitters (rolling checksum, new line, etc)
 - Remote storage
     - GCS, AWS, etc
-    - Self-hosted HTTP CAS server
-- Web integration
-    - Sync web content (only fetch is implemented currently)
+    - Self-hosted HTTP CAS server (read-write)
 - Integration with Git
     - Zero-copy fetch from Git (either remote or local)
     - LFS integration
