@@ -43,6 +43,9 @@ func (w *hashWriter) Complete() (types.SizedRef, error) {
 }
 
 func (w *hashWriter) Close() error {
+	if w.h == nil && !w.ref.Ref.Zero() {
+		return ErrBlobCompleted
+	}
 	w.h = nil
 	return nil
 }
