@@ -34,19 +34,26 @@ var (
 
 func New(dir string, create bool) (*Storage, error) {
 	_, err := os.Stat(dir)
+	if err == nil {
+		_, err = os.Stat(filepath.Join(dir, dirBlobs))
+	}
 	if os.IsNotExist(err) {
 		if !create {
 			return nil, err
 		}
-		err = os.MkdirAll(filepath.Join(dir, dirBlobs), 0755)
+		err = os.MkdirAll(dir, 0755)
 		if err != nil {
 			return nil, err
 		}
-		err = os.MkdirAll(filepath.Join(dir, dirPins), 0755)
+		err = os.Mkdir(filepath.Join(dir, dirBlobs), 0755)
 		if err != nil {
 			return nil, err
 		}
-		err = os.MkdirAll(filepath.Join(dir, dirTmp), 0755)
+		err = os.Mkdir(filepath.Join(dir, dirPins), 0755)
+		if err != nil {
+			return nil, err
+		}
+		err = os.Mkdir(filepath.Join(dir, dirTmp), 0755)
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +70,7 @@ type Storage struct {
 
 func (s *Storage) tmpFile() (*os.File, error) {
 	dir := filepath.Join(s.dir, dirTmp)
-	return ioutil.TempFile(dir, "")
+	return ioutil.TempFile(dir, "blob_")
 }
 
 func (s *Storage) blobPath(ref types.Ref) string {
