@@ -207,3 +207,15 @@ func DecodeType(r io.Reader) (string, error) {
 	typ, _, err := decodeType(r)
 	return typ, err
 }
+
+// PeekType reads a portion of data from r, reports the type of the schema blob that it describes,
+// and returns a new restored reader.
+func PeekType(r io.Reader) (io.Reader, string, error) {
+	var err error
+	r, err = checkSchema(r)
+	if err != nil {
+		return r, "", err
+	}
+	typ, data, err := decodeType(r)
+	return io.MultiReader(bytes.NewReader(data), r), typ, err
+}
