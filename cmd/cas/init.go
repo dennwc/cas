@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -11,6 +12,7 @@ import (
 	"github.com/dennwc/cas"
 	"github.com/dennwc/cas/config"
 	"github.com/dennwc/cas/storage"
+	"github.com/dennwc/cas/storage/gcs"
 	"github.com/dennwc/cas/storage/http"
 	"github.com/dennwc/cas/storage/local"
 )
@@ -56,4 +58,18 @@ func init() {
 		}),
 	}
 	cmd.AddCommand(initHTTPCmd)
+
+	initGCSCmd := &cobra.Command{
+		Use:     "gcs",
+		Aliases: []string{"google", "gs"},
+		Short:   "init a client to CAS on Google Cloud Storage",
+		RunE: casInitCmd(func(ctx context.Context, _ *pflag.FlagSet, args []string) (storage.Config, error) {
+			if len(args) != 1 {
+				return nil, fmt.Errorf("expected a GCS bucket")
+			}
+			bucket := strings.TrimPrefix(args[0], "gs://")
+			return &gcs.Config{Bucket: bucket}, nil
+		}),
+	}
+	cmd.AddCommand(initGCSCmd)
 }

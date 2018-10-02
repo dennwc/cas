@@ -48,6 +48,7 @@ Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands
     - HTTP(S) caching (as a Go library)
 - Remote storage
     - Self-hosted HTTP CAS server (read-only)
+    - Google Cloud Storage
 - Usability
     - Mutable objects (pins)
     - Local storage in Git fashion
@@ -62,7 +63,7 @@ Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands
     - Support multilevel parts
     - Support blob splitters (rolling checksum, new line, etc)
 - Remote storage
-    - GCS, AWS, etc
+    - AWS, etc
     - Self-hosted HTTP CAS server (read-write)
 - Integration with Git
     - Zero-copy fetch from Git (either remote or local)
