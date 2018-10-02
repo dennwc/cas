@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
+	"os/user"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -34,6 +38,22 @@ func casOpenCmd(fnc casRunE) cobraRunE {
 		st, err := cas.Open(cas.OpenOptions{
 			Dir: casDir,
 		})
+		if os.IsNotExist(err) {
+			oerr := err
+			var u *user.User
+			u, err = user.Current()
+			if err != nil {
+				return err
+			}
+			dir := filepath.Join(u.HomeDir, casDir)
+			st, err = cas.Open(cas.OpenOptions{
+				Dir: dir,
+			})
+			if err != nil {
+				return oerr // return original error
+			}
+			fmt.Fprintln(os.Stderr, "using global CAS:", dir)
+		}
 		if err != nil {
 			return err
 		}
