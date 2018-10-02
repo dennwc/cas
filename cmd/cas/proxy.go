@@ -27,7 +27,7 @@ func init() {
 	cmd := &cobra.Command{
 		Use:   "proxy",
 		Short: "proxy http requests and save them to CAS",
-		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, flags *pflag.FlagSet, args []string) error {
+		RunE: casOpenCmd(func(ctx context.Context, s *cas.Storage, flags *pflag.FlagSet, args []string) error {
 			if len(args) != 0 {
 				return fmt.Errorf("unexpected argument")
 			}

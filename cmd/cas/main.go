@@ -40,19 +40,3 @@ func casOpenCmd(fnc casRunE) cobraRunE {
 		return fnc(cmdCtx, st, cmd.Flags(), args)
 	}
 }
-
-func casCreateCmd(fnc casRunE) cobraRunE {
-	return func(cmd *cobra.Command, args []string) error {
-		err := cas.Init(casDir, nil)
-		if err != nil {
-			return err
-		}
-		st, err := cas.Open(cas.OpenOptions{
-			Dir: casDir,
-		})
-		if err != nil {
-			return err
-		}
-		return fnc(cmdCtx, st, cmd.Flags(), args)
-	}
-}

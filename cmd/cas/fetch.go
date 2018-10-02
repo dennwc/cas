@@ -30,7 +30,7 @@ func init() {
 	cmd := &cobra.Command{
 		Use:   "fetch",
 		Short: "store the URL or file in the content-addressable storage",
-		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, flags *pflag.FlagSet, args []string) error {
+		RunE: casOpenCmd(func(ctx context.Context, s *cas.Storage, flags *pflag.FlagSet, args []string) error {
 			conf := storeConfigFromFlags(flags)
 
 			var last error

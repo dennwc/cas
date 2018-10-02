@@ -15,7 +15,7 @@ func init() {
 	cmd := &cobra.Command{
 		Use:   "pin [name] ref",
 		Short: "set a named pin pointing to a ref",
-		RunE: casCreateCmd(func(ctx context.Context, s *cas.Storage, _ *pflag.FlagSet, args []string) error {
+		RunE: casOpenCmd(func(ctx context.Context, s *cas.Storage, _ *pflag.FlagSet, args []string) error {
 			if len(args) == 0 || len(args) > 2 {
 				return fmt.Errorf("expected 1 or 2 arguments")
 			}
