@@ -29,11 +29,11 @@ func (s *Storage) StoreSchema(ctx context.Context, o schema.Object) (SizedRef, e
 }
 
 func (s *Storage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser, uint64, error) {
-	return s.st.FetchSchema(ctx, ref)
+	return s.index.FetchSchema(ctx, ref)
 }
 
 func (s *Storage) DecodeSchema(ctx context.Context, ref types.Ref) (schema.Object, error) {
-	rc, _, err := s.st.FetchSchema(ctx, ref)
+	rc, _, err := s.index.FetchSchema(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -42,9 +42,9 @@ func (s *Storage) DecodeSchema(ctx context.Context, ref types.Ref) (schema.Objec
 }
 
 func (s *Storage) IterateSchema(ctx context.Context, typs ...string) SchemaIterator {
-	return s.st.IterateSchema(ctx, typs...)
+	return s.index.IterateSchema(ctx, typs...)
 }
 
-func (s *Storage) Reindex(ctx context.Context, force bool) error {
-	return s.st.Reindex(ctx, force)
+func (s *Storage) ReindexSchema(ctx context.Context, force bool) error {
+	return s.index.ReindexSchema(ctx, force)
 }

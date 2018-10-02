@@ -27,6 +27,11 @@ const (
 	roPerm = 0444
 )
 
+var (
+	_ storage.Storage     = (*Storage)(nil)
+	_ storage.BlobIndexer = (*Storage)(nil)
+)
+
 func New(dir string, create bool) (*Storage, error) {
 	_, err := os.Stat(dir)
 	if os.IsNotExist(err) {
@@ -391,7 +396,7 @@ func (s *Storage) IterateSchema(ctx context.Context, typs ...string) storage.Sch
 	return &schemaIterator{s: s, ctx: ctx, typs: filter, dir: filepath.Join(s.dir, dirBlobs)}
 }
 
-func (s *Storage) Reindex(ctx context.Context, force bool) error {
+func (s *Storage) ReindexSchema(ctx context.Context, force bool) error {
 	it := &schemaIterator{s: s, ctx: ctx, force: force, dir: filepath.Join(s.dir, dirBlobs)}
 	defer it.Close()
 	for it.Next() {

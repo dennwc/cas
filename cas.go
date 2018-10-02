@@ -38,13 +38,20 @@ func Open(opt OpenOptions) (*Storage, error) {
 }
 
 func New(st storage.Storage) (*Storage, error) {
-	return &Storage{st: st}, nil
+	return &Storage{
+		st:    st,
+		index: storage.NewBlobIndexer(st),
+	}, nil
 }
 
-var _ storage.Storage = (*Storage)(nil)
+var (
+	_ storage.Storage     = (*Storage)(nil)
+	_ storage.BlobIndexer = (*Storage)(nil)
+)
 
 type Storage struct {
-	st storage.Storage
+	st    storage.Storage
+	index storage.BlobIndexer
 }
 
 func (s *Storage) SetPin(ctx context.Context, name string, ref types.Ref) error {
