@@ -3,6 +3,8 @@
 This project implements a simple and pragmatic approach to Content Addressable Storage (CAS).
 It was heavily influenced by [Perkeep](https://perkeep.org/) (aka Camlistore) and Git.
 
+For more details, see [concepts](./docs/concepts.md) and [comparison](./docs/comparison.md) with other systems.
+
 ## Status
 
 The project is in an active development. Both API and on-disk format may change.
