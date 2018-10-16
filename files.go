@@ -2,6 +2,7 @@ package cas
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -51,7 +52,7 @@ func (s *Storage) storeFileContent(ctx context.Context, fd FileDesc, conf *Store
 	// if we know the ref - check if we expect it, and if not - set as expected
 	if !xr.Ref.Zero() {
 		if err = conf.checkRef(xr); err != nil {
-			return types.SizedRef{}, err
+			return types.SizedRef{}, fmt.Errorf("file %q: %v", fd.Name(), err)
 		}
 		conf.Expect = xr
 	}
@@ -170,7 +171,9 @@ func (s *Storage) storeDir(ctx context.Context, dir string, conf *StoreConfig) (
 					Stats: st,
 				})
 			} else {
-				ent, err := s.storeAsFile(ctx, LocalFile(fpath), conf)
+				c := *conf
+				c.Expect = SizedRef{}
+				ent, err := s.storeAsFile(ctx, LocalFile(fpath), &c)
 				if err != nil {
 					return SizedRef{}, nil, err
 				}
