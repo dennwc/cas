@@ -98,6 +98,27 @@ func (s *Storage) blobPath(ref types.Ref) string {
 	return filepath.Join(s.dir, dirBlobs, ref.String())
 }
 
+// removeIfInvalid does a quick check for an invalid blob and removes it, if necessary, returning true as the result.
+func (s *Storage) removeIfInvalid(fi os.FileInfo, ref types.Ref) (bool, error) {
+	// the only case that can be detected is an empty file stored with a non-empty ref
+	if fi.Size() != 0 || ref.Empty() {
+		return false, nil
+	}
+	// it's definitely a corrupted blob - remove it
+	// those might be left by an instant system shutdown
+
+	// if any error happens during cleanup - ignore it and report "ref mismatch"
+	err := os.Chmod(s.blobPath(ref), 0666)
+	if err != nil {
+		return false, storage.ErrRefMissmatch{Exp: ref, Got: types.BytesRef(nil)}
+	}
+	err = os.Remove(s.blobPath(ref))
+	if err != nil {
+		return false, storage.ErrRefMissmatch{Exp: ref, Got: types.BytesRef(nil)}
+	}
+	return true, nil
+}
+
 func (s *Storage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
 	if ref.Zero() {
 		return 0, storage.ErrInvalidRef
@@ -105,6 +126,11 @@ func (s *Storage) StatBlob(ctx context.Context, ref types.Ref) (uint64, error) {
 	fi, err := os.Stat(s.blobPath(ref))
 	if err != nil {
 		return 0, err
+	}
+	if invalid, err := s.removeIfInvalid(fi, ref); err != nil {
+		return 0, err
+	} else if invalid {
+		return 0, storage.ErrNotFound
 	}
 	return uint64(fi.Size()), nil
 }
@@ -123,6 +149,13 @@ func (s *Storage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, 
 	if err != nil {
 		f.Close()
 		return nil, 0, err
+	}
+	if invalid, err := s.removeIfInvalid(fi, ref); err != nil {
+		f.Close()
+		return nil, 0, err
+	} else if invalid {
+		f.Close()
+		return nil, 0, storage.ErrNotFound
 	}
 	return f, uint64(fi.Size()), nil
 }
@@ -304,6 +337,12 @@ func (it *dirIterator) Next() bool {
 		it.sr.Ref, it.err = types.ParseRef(info.Name())
 		if it.err != nil {
 			return false
+		}
+		if invalid, err := it.s.removeIfInvalid(info, it.sr.Ref); err != nil {
+			it.err = err
+			return false
+		} else if invalid {
+			continue
 		}
 		return true
 	}
@@ -506,6 +545,12 @@ func (it *schemaIterator) Next() bool {
 			} else if err != nil {
 				it.err = err
 				return false
+			}
+			if invalid, err := it.s.removeIfInvalid(st, ref); err != nil {
+				it.err = err
+				return false
+			} else if invalid {
+				continue
 			}
 			it.sr.Type, it.sr.Ref, it.sr.Size = typ, ref, uint64(st.Size())
 			return true
