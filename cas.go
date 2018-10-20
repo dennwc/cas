@@ -165,7 +165,11 @@ func (s *Storage) FetchBlob(ctx context.Context, ref Ref) (io.ReadCloser, uint64
 		// generate empty blobs
 		return ioutil.NopCloser(bytes.NewReader(nil)), 0, nil
 	}
-	return s.st.FetchBlob(ctx, ref)
+	rc, sz, err := s.st.FetchBlob(ctx, ref)
+	if err == nil {
+		rc = storage.VerifyReader(rc, ref)
+	}
+	return rc, sz, err
 }
 
 func (s *Storage) IterateBlobs(ctx context.Context) storage.Iterator {
