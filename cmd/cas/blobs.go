@@ -44,16 +44,23 @@ func init() {
 		Use:     "list",
 		Aliases: []string{"l", "ls"},
 		Short:   "list blob(s) stored in CAS",
-		RunE: casOpenCmd(func(ctx context.Context, st *cas.Storage, _ *pflag.FlagSet, args []string) error {
+		RunE: casOpenCmd(func(ctx context.Context, st *cas.Storage, flags *pflag.FlagSet, args []string) error {
+			short, _ := flags.GetBool("short")
+
 			it := st.IterateBlobs(ctx)
 			defer it.Close()
 			for it.Next() {
 				sr := it.SizedRef()
-				fmt.Println(sr.Ref, sr.Size)
+				if short {
+					fmt.Println(sr.Ref)
+				} else {
+					fmt.Println(sr.Ref, sr.Size)
+				}
 			}
 			return it.Err()
 		}),
 	}
+	listCmd.Flags().BoolP("short", "s", false, "only print refs")
 	cmd.AddCommand(listCmd)
 }
 
