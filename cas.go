@@ -26,15 +26,15 @@ func Init(dir string, conf *config.Config) error {
 	if dir == "" {
 		dir = DefaultDir
 	}
-	err := os.MkdirAll(dir, 0755)
-	if err != nil {
-		return err
-	}
 	confPath := filepath.Join(dir, config.DefaultConfig)
-	_, err = config.ReadConfig(confPath)
+	_, err := config.ReadConfig(confPath)
 	if err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
+		return err
+	}
+	err = os.MkdirAll(dir, 0755)
+	if err != nil {
 		return err
 	}
 	if conf == nil {
