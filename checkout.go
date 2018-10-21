@@ -54,11 +54,15 @@ func (s *Storage) checkoutBlobData(ctx context.Context, r io.Reader, sr SizedRef
 	if err != nil {
 		return err
 	}
+	err = SaveRefFile(ctx, f, fi, sr.Ref)
+	if err != nil {
+		return err
+	}
 	err = f.Close()
 	if err != nil {
 		return err
 	}
-	return SaveRef(ctx, dst, fi, sr.Ref)
+	return nil
 }
 
 func (s *Storage) checkoutBlob(ctx context.Context, ref Ref, dst string) error {

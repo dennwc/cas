@@ -3,6 +3,7 @@
 package local
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -122,7 +123,12 @@ func (f *linuxTmpFile) Commit(ref types.Ref) error {
 
 	fd := int(tmp.Fd())
 
-	err := unix.Fchmod(fd, roPerm)
+	err := SaveRefFile(context.Background(), tmp, nil, ref)
+	if err != nil {
+		return fmt.Errorf("save ref: %v", err)
+	}
+
+	err = unix.Fchmod(fd, roPerm)
 	if err != nil {
 		return fmt.Errorf("fchmod: %v", err)
 	}

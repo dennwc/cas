@@ -10,16 +10,17 @@ import (
 )
 
 func HashWith(ctx context.Context, path string, info os.FileInfo, force bool) (SizedRef, error) {
-	if !force {
-		if sr, err := Stat(ctx, path); err == nil && !sr.Ref.Zero() {
-			return sr, nil
-		}
-	}
 	f, err := os.Open(path)
 	if err != nil {
 		return SizedRef{}, err
 	}
 	defer f.Close()
+
+	if !force {
+		if sr, err := StatFile(ctx, f); err == nil && !sr.Ref.Zero() {
+			return sr, nil
+		}
+	}
 
 	h := types.NewRef().Hash()
 	n, err := io.Copy(h, f)
@@ -27,7 +28,7 @@ func HashWith(ctx context.Context, path string, info os.FileInfo, force bool) (S
 		return SizedRef{}, err
 	}
 	ref := types.NewRef().WithHash(h)
-	if err = SaveRef(ctx, path, info, ref); err != nil {
+	if err = SaveRefFile(ctx, f, info, ref); err != nil {
 		log.Println(err)
 	}
 	return SizedRef{Ref: ref, Size: uint64(n)}, nil

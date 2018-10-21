@@ -39,17 +39,19 @@ func init() {
 					} else if info.IsDir() {
 						return nil
 					}
-					if !force {
-						if sr, err := cas.Stat(ctx, name); err == nil && !sr.Ref.Zero() {
-							fmt.Println(sr.Ref, name, "(cached)")
-							return nil
-						}
-					}
+
 					f, err := os.Open(name)
 					if err != nil {
 						return err
 					}
 					defer f.Close()
+
+					if !force {
+						if sr, err := cas.StatFile(ctx, f); err == nil && !sr.Ref.Zero() {
+							fmt.Println(sr.Ref, name, "(cached)")
+							return nil
+						}
+					}
 
 					h.Reset()
 					_, err = io.Copy(h, f)
@@ -58,7 +60,7 @@ func init() {
 					}
 					ref = ref.WithHash(h)
 					fmt.Println(ref, name)
-					if err = cas.SaveRef(ctx, name, info, ref); err != nil && !xerr {
+					if err = cas.SaveRefFile(ctx, f, info, ref); err != nil && !xerr {
 						log.Println(err)
 						xerr = true
 					}

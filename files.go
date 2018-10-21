@@ -299,7 +299,7 @@ func (f *localFile) Open() (io.ReadCloser, SizedRef, error) {
 	}
 	f.fi = st
 	sr := SizedRef{Size: uint64(st.Size())}
-	if xr, err := Stat(context.Background(), f.path); err == nil && xr.Size == sr.Size {
+	if xr, err := StatFile(context.Background(), fd); err == nil && xr.Size == sr.Size {
 		sr.Ref = xr.Ref
 	}
 	return fd, sr, nil
