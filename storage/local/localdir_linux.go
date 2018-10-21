@@ -25,6 +25,10 @@ func cloneFile(dst, src *os.File) error {
 	return ioctl.Ioctl(dst, iocFICLONE, src.Fd())
 }
 
+func linkFile(dir *os.File, name string, file *os.File) error {
+	return unix.Linkat(unix.AT_FDCWD, file.Name(), int(dir.Fd()), name, unix.AT_SYMLINK_FOLLOW)
+}
+
 var noTmpFile int32
 
 type storageImpl struct {
@@ -133,10 +137,13 @@ func (f *linuxTmpFile) Commit(ref types.Ref) error {
 		return fmt.Errorf("fchmod: %v", err)
 	}
 
-	blobsFD := int(f.s.blobDir.Fd())
-	err = unix.Linkat(unix.AT_FDCWD, tmp.Name(), blobsFD, ref.String(), unix.AT_SYMLINK_FOLLOW)
+	err = linkFile(f.s.blobDir, ref.String(), tmp)
 	if err != nil {
 		return fmt.Errorf("linkat: %v", err)
+	}
+	err = f.s.addNotIndexed(tmp, ref)
+	if err != nil {
+		return err
 	}
 	return tmp.Close()
 }

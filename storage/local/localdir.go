@@ -17,18 +17,33 @@ import (
 )
 
 const (
-	dirBlobs = "blobs"
-	dirPins  = "pins"
-	dirTmp   = "tmp"
+	dirBlobs     = "blobs"
+	dirPins      = "pins"
+	dirTmp       = "tmp"
+	dirIndex     = "indexes"
+	dirUnindexed = "unindexed"
 
 	xattrNS         = "cas."
 	xattrSchemaType = xattrNS + "schema.type"
 
-	roPerm = 0444
+	indexType = "@type"
+
+	readDirPage = 1024
+
+	roPerm  = 0444
+	dirPerm = 0755
 )
 
 var (
 	errCantClone = errors.New("copy-on-write not supported")
+)
+
+var (
+	mkDirs = []string{
+		dirBlobs,
+		dirPins,
+		dirTmp,
+	}
 )
 
 var (
@@ -65,40 +80,90 @@ func New(dir string, create bool) (*Storage, error) {
 		if !create {
 			return nil, err
 		}
-		err = os.MkdirAll(dir, 0755)
+		err = os.MkdirAll(dir, dirPerm)
 		if err != nil {
 			return nil, err
 		}
-		err = os.Mkdir(filepath.Join(dir, dirBlobs), 0755)
-		if err != nil {
-			return nil, err
-		}
-		err = os.Mkdir(filepath.Join(dir, dirPins), 0755)
-		if err != nil {
-			return nil, err
-		}
-		err = os.Mkdir(filepath.Join(dir, dirTmp), 0755)
-		if err != nil {
-			return nil, err
+		for _, name := range mkDirs {
+			err = os.Mkdir(filepath.Join(dir, name), dirPerm)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	s := &Storage{dir: dir}
+	s := &Storage{
+		dir: dir,
+	}
+	if err := s.initIndexes(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	if err := s.init(); err != nil {
+		s.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
 type Storage struct {
-	dir string
+	dir       string
+	unindexed *os.File
 	storageImpl
 }
 
+func (s *Storage) ensureDir(dir string) error {
+	path := filepath.Join(s.dir, dir)
+	_, err := os.Stat(path)
+	if err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return os.Mkdir(path, dirPerm)
+}
+func (s *Storage) openOrMake(dir string) (*os.File, error) {
+	path := filepath.Join(s.dir, dir)
+	d, err := os.Open(path)
+	if os.IsNotExist(err) {
+		err = os.Mkdir(path, dirPerm)
+		if err != nil {
+			return nil, err
+		}
+		d, err = os.Open(path)
+	}
+	return d, err
+}
+func (s *Storage) ensureIndex(field string) error {
+	return s.ensureDir(filepath.Join(dirIndex, field))
+}
+func (s *Storage) initIndexes() error {
+	var err error
+	s.unindexed, err = s.openOrMake(dirUnindexed)
+	if err != nil {
+		return err
+	}
+	if err = s.ensureDir(dirIndex); err != nil {
+		return err
+	}
+	if err = s.ensureIndex(indexType); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Storage) Close() error {
+	s.closeIndexes()
 	return s.close()
+}
+
+func (s *Storage) closeIndexes() error {
+	if s.unindexed != nil {
+		s.unindexed.Close()
+	}
+	return nil
 }
 
 type tempFile interface {
@@ -224,6 +289,10 @@ func (s *Storage) ImportFile(ctx context.Context, path string) (types.SizedRef, 
 		return types.SizedRef{}, err
 	}
 	return sr, nil
+}
+
+func (s *Storage) addNotIndexed(f *os.File, ref types.Ref) error {
+	return linkFile(s.unindexed, ref.String(), f)
 }
 
 func (s *Storage) BeginBlob(ctx context.Context) (storage.BlobWriter, error) {
@@ -469,19 +538,68 @@ func (it *pinIterator) Close() error {
 }
 
 func (s *Storage) IterateSchema(ctx context.Context, typs ...string) storage.SchemaIterator {
-	var filter map[string]struct{}
-	if len(typs) != 0 {
-		filter = make(map[string]struct{})
-		for _, v := range typs {
-			filter[v] = struct{}{}
+	if len(typs) == 0 {
+		return &schemaAnyIterator{
+			s: s, ctx: ctx,
+			blobs: s.iterateNames(ctx, dirBlobs, true),
 		}
 	}
-	return &schemaIterator{s: s, ctx: ctx, typs: filter, dir: filepath.Join(s.dir, dirBlobs)}
+	filter := make(map[string]struct{})
+	for _, v := range typs {
+		filter[v] = struct{}{}
+	}
+	return &schemaIterator{
+		s: s, ctx: ctx,
+		types: typs, filter: filter,
+	}
+}
+
+func (s *Storage) resetIndexes() error {
+	dstDir := filepath.Join(s.dir, dirUnindexed)
+	// drop indexes
+	s.closeIndexes()
+	if err := os.RemoveAll(dstDir); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(s.dir, dirIndex)); err != nil {
+		return err
+	}
+	if err := s.initIndexes(); err != nil {
+		return err
+	}
+	// mark every blob as unindexed
+	srcDir := filepath.Join(s.dir, dirBlobs)
+	d, err := os.Open(srcDir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	for {
+		buf, err := d.Readdirnames(readDirPage)
+		if err == io.EOF {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		for _, name := range buf {
+			err = os.Link(filepath.Join(srcDir, name), filepath.Join(dstDir, name))
+			if err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (s *Storage) ReindexSchema(ctx context.Context, force bool) error {
-	it := &schemaIterator{s: s, ctx: ctx, force: force, dir: filepath.Join(s.dir, dirBlobs)}
-	defer it.Close()
+	if force {
+		if err := s.resetIndexes(); err != nil {
+			return err
+		}
+	}
+	// only restore the global index
+	it := s.IterateSchema(ctx)
+	it.(*schemaAnyIterator).force = true
 	for it.Next() {
 		_ = it.SchemaRef()
 	}
@@ -498,21 +616,26 @@ func (s *Storage) FetchSchema(ctx context.Context, ref types.Ref) (io.ReadCloser
 	return s.FetchBlob(ctx, ref)
 }
 
-type schemaIterator struct {
-	s     *Storage
-	ctx   context.Context
-	typs  map[string]struct{}
-	dir   string
-	force bool
-
-	d   *os.File
-	buf []string
-
-	sr  types.SchemaRef
-	err error
+func (s *Storage) iterateNames(ctx context.Context, dir string, fix bool) *namesIterator {
+	return &namesIterator{
+		s: s, dir: filepath.Join(s.dir, dir),
+		noRemove: !fix,
+	}
 }
 
-func (it *schemaIterator) Next() bool {
+type namesIterator struct {
+	s      *Storage
+	dir    string
+	d      *os.File
+	buf    []os.FileInfo
+	filter func(path string) (bool, error)
+
+	noRemove bool
+	sr       types.SizedRef
+	err      error
+}
+
+func (it *namesIterator) Next() bool {
 	if it.d == nil {
 		d, err := os.Open(it.dir)
 		if os.IsNotExist(err) {
@@ -525,7 +648,7 @@ func (it *schemaIterator) Next() bool {
 	}
 	for {
 		if len(it.buf) == 0 {
-			buf, err := it.d.Readdirnames(1024)
+			buf, err := it.d.Readdir(readDirPage)
 			if err == io.EOF {
 				return false
 			} else if err != nil {
@@ -535,47 +658,220 @@ func (it *schemaIterator) Next() bool {
 			it.buf = buf
 		}
 		for len(it.buf) > 0 {
-			name := it.buf[0]
+			fi := it.buf[0]
 			it.buf = it.buf[1:]
+			name := fi.Name()
 
-			typ, err := it.getType(name)
-			if err != nil {
-				it.err = err
-				return false
-			} else if typ == "" {
-				continue
-			}
-			if it.typs != nil {
-				if _, ok := it.typs[typ]; !ok {
+			if it.filter != nil {
+				ok, err := it.filter(filepath.Join(it.dir, name))
+				if err != nil {
+					it.err = err
+					return false
+				} else if !ok {
 					continue
 				}
 			}
+
 			ref, err := types.ParseRef(name)
 			if err != nil {
 				it.err = err
 				return false
 			}
-			st, err := os.Stat(filepath.Join(it.dir, name))
-			if os.IsNotExist(err) {
-				continue
-			} else if err != nil {
-				it.err = err
-				return false
+			if !it.noRemove {
+				if invalid, err := it.s.removeIfInvalid(fi, ref); err != nil {
+					it.err = err
+					return false
+				} else if invalid {
+					continue
+				}
 			}
-			if invalid, err := it.s.removeIfInvalid(st, ref); err != nil {
-				it.err = err
-				return false
-			} else if invalid {
-				continue
-			}
-			it.sr.Type, it.sr.Ref, it.sr.Size = typ, ref, uint64(st.Size())
+			it.sr.Ref, it.sr.Size = ref, uint64(fi.Size())
 			return true
 		}
 	}
 }
 
-func (it *schemaIterator) getType(name string) (string, error) {
-	path := filepath.Join(it.dir, name)
+func (it *namesIterator) Err() error {
+	return it.err
+}
+
+func (it *namesIterator) Close() error {
+	if it.d != nil {
+		it.d.Close()
+		it.d = nil
+	}
+	it.buf = nil
+	return it.err
+}
+
+func (it *namesIterator) SizedRef() types.SizedRef {
+	return it.sr
+}
+
+// schemaIterator uses indexes to iterate over blobs with a specific schema type.
+// It will automatically index blobs that are unindexed.
+type schemaIterator struct {
+	s   *Storage
+	ctx context.Context
+
+	types     []string
+	filter    map[string]struct{}
+	unindexed bool
+
+	it *namesIterator
+
+	sr types.SchemaRef
+}
+
+func (it *schemaIterator) Next() bool {
+	for {
+		if it.it == nil {
+			it.sr.Type = ""
+			if it.unindexed {
+				// drained unindexed blobs - we are done
+				return false
+			}
+			if len(it.types) == 0 {
+				// no types left - list unindexed blobs
+				it.unindexed = true
+				it.it = it.s.iterateNames(it.ctx, dirUnindexed, false)
+				it.it.filter = it.filterUnindexed
+			} else {
+				// list types one by one
+				typ := it.types[0]
+				it.types = it.types[1:]
+				it.sr.Type = typ
+				ipath := filepath.Join(dirIndex, indexType, typ)
+				it.it = it.s.iterateNames(it.ctx, ipath, false)
+			}
+		}
+		if it.it.Next() {
+			sr := it.it.SizedRef()
+			it.sr.Ref, it.sr.Size = sr.Ref, sr.Size
+			return true
+		}
+		it.it.Close()
+		it.it = nil
+	}
+}
+
+func (it *schemaIterator) filterUnindexed(path string) (bool, error) {
+	typ, err := it.indexType(path)
+	if err != nil {
+		return false, err
+	} else if typ == "" {
+		return false, nil
+	}
+	if _, ok := it.filter[typ]; !ok {
+		return false, nil
+	}
+	it.sr.Type = typ
+	return true, nil
+}
+
+func (it *schemaIterator) indexType(path string) (string, error) {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		// blob gone
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	typ, err := schema.DecodeType(f)
+	if err == schema.ErrNotSchema || typ == "" {
+		// data blob - remove from unindexed list
+		err = os.Remove(path)
+		return "", err
+	} else if err != nil {
+		return "", err
+	}
+	// schema blob - move it to the right index folder
+	sref := filepath.Base(path)
+	ipath := filepath.Join(it.s.dir, dirIndex, indexType, typ)
+	err = os.Rename(path, filepath.Join(ipath, sref))
+	if os.IsNotExist(err) {
+		err = os.MkdirAll(ipath, dirPerm)
+		if err != nil {
+			return typ, err
+		}
+		err = os.Rename(path, filepath.Join(ipath, sref))
+	}
+	return typ, err
+}
+
+func (it *schemaIterator) Err() error {
+	if it.it == nil {
+		return nil
+	}
+	return it.it.Err()
+}
+
+func (it *schemaIterator) Close() error {
+	if it.it != nil {
+		it.it.Close()
+		it.it = nil
+	}
+	it.unindexed = true
+	it.types = nil
+	return nil
+}
+
+func (it *schemaIterator) SizedRef() types.SizedRef {
+	return it.sr.SizedRef()
+}
+
+func (it *schemaIterator) SchemaRef() types.SchemaRef {
+	return it.sr
+}
+
+func (it *schemaIterator) Decode() (schema.Object, error) {
+	rc, _, err := it.s.FetchBlob(it.ctx, it.SizedRef().Ref)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	return schema.Decode(rc)
+}
+
+// schemaAnyIterator iterates over all blobs and lists only schema blobs.
+// It stores an xattr that specifies the type of a blob to scan faster.
+// Force flag can be set to reindex blobs.
+type schemaAnyIterator struct {
+	s     *Storage
+	ctx   context.Context
+	force bool
+
+	blobs *namesIterator
+
+	typ string
+}
+
+func (it *schemaAnyIterator) Next() bool {
+	if it.blobs.filter == nil {
+		it.blobs.filter = it.filterType
+	}
+	if !it.blobs.Next() {
+		it.typ = ""
+		return false
+	}
+	return true
+}
+
+func (it *schemaAnyIterator) filterType(path string) (bool, error) {
+	typ, err := it.getType(path)
+	if err != nil {
+		return false, err
+	} else if typ == "" {
+		return false, nil
+	}
+	it.typ = typ
+	return true, nil
+}
+
+func (it *schemaAnyIterator) getType(path string) (string, error) {
 	if !it.force {
 		// first try to read cached xattr
 		typ, err := xattr.GetString(path, xattrSchemaType)
@@ -609,29 +905,28 @@ func (it *schemaIterator) getType(name string) (string, error) {
 	return typ, nil
 }
 
-func (it *schemaIterator) Err() error {
-	return it.err
+func (it *schemaAnyIterator) Err() error {
+	return it.blobs.Err()
 }
 
-func (it *schemaIterator) Close() error {
-	if it.d != nil {
-		it.d.Close()
-		it.d = nil
+func (it *schemaAnyIterator) Close() error {
+	return it.blobs.Close()
+}
+
+func (it *schemaAnyIterator) SizedRef() types.SizedRef {
+	return it.blobs.SizedRef()
+}
+
+func (it *schemaAnyIterator) SchemaRef() types.SchemaRef {
+	sr := it.SizedRef()
+	return types.SchemaRef{
+		Ref: sr.Ref, Size: sr.Size,
+		Type: it.typ,
 	}
-	it.buf = nil
-	return it.err
 }
 
-func (it *schemaIterator) SizedRef() types.SizedRef {
-	return it.sr.SizedRef()
-}
-
-func (it *schemaIterator) SchemaRef() types.SchemaRef {
-	return it.sr
-}
-
-func (it *schemaIterator) Decode() (schema.Object, error) {
-	rc, _, err := it.s.FetchBlob(it.ctx, it.sr.Ref)
+func (it *schemaAnyIterator) Decode() (schema.Object, error) {
+	rc, _, err := it.s.FetchBlob(it.ctx, it.SizedRef().Ref)
 	if err != nil {
 		return nil, err
 	}
@@ -684,14 +979,11 @@ func (f *genTmpFile) Commit(ref types.Ref) error {
 	if f.f == nil {
 		return os.ErrClosed
 	}
-	err := f.f.Close()
-	name := f.f.Name()
-	if err != nil {
-		os.Remove(name)
-		f.f = nil
-		return err
-	}
+	tmp := f.f
 	f.f = nil
+	defer tmp.Close()
+	name := tmp.Name()
+
 	if err := os.Chmod(name, roPerm); err != nil {
 		os.Remove(name)
 		return err
@@ -701,5 +993,8 @@ func (f *genTmpFile) Commit(ref types.Ref) error {
 		os.Remove(name)
 		return err
 	}
-	return nil
+	if err := f.s.addNotIndexed(tmp, ref); err != nil {
+		return err
+	}
+	return tmp.Close()
 }

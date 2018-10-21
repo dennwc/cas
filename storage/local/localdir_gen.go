@@ -4,6 +4,7 @@ package local
 
 import (
 	"os"
+	"path/filepath"
 )
 
 type storageImpl struct{}
@@ -24,4 +25,8 @@ const cloneSupported = false
 
 func cloneFile(dst, src *os.File) error {
 	return errCantClone
+}
+
+func linkFile(dir *os.File, name string, file *os.File) error {
+	return os.Link(file.Name(), filepath.Join(dir.Name(), name))
 }
