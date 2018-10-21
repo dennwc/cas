@@ -11,6 +11,8 @@ import (
 	"net/http"
 
 	"github.com/dennwc/cas"
+	"github.com/dennwc/cas/schema"
+	"github.com/dennwc/cas/storage"
 	"github.com/dennwc/cas/types"
 )
 
@@ -68,16 +70,33 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return t.tr.RoundTrip(req)
 	}
 	ctx := req.Context()
-	reqRef, err := t.storeRequest(req)
+
+	// read the body first - we need to store the trailer, so we need to drain the stream
+	body, bref, err := t.storeBody(ctx, req.Body)
 	if err != nil {
 		req.Body.Close()
 		return nil, err
 	}
-	if resp, err := t.serveFromCache(reqRef, req); err == nil && resp != nil {
+	req.Body = body // restore the body
+
+	// do not store request metadata just yet
+	// user may provide a custom headers filter, so we might have a similar
+	// request already stored in the cache
+
+	if resp, err := t.serveFromCache(req); err == nil && resp != nil {
+		// no need to store the new request
 		return resp, nil
 	} else if err != nil {
 		log.Println(req.Method, req.URL, err)
 	}
+
+	// cache miss - store the request
+	reqRef, err := t.storeRequest(req, bref)
+	if err != nil {
+		req.Body.Close()
+		return nil, err
+	}
+
 	resp, err := t.tr.RoundTrip(req)
 	if err != nil {
 		return nil, err
@@ -105,7 +124,8 @@ func (t *Transport) storeBody(ctx context.Context, rc io.ReadCloser) (io.ReadClo
 	}
 	defer rc.Close()
 	// read the small buffer to know if the stream is empty
-	b := make([]byte, 512)
+	const peekSize = 4096
+	b := make([]byte, peekSize)
 	n, err := rc.Read(b[:])
 	if err == io.EOF {
 		err = nil
@@ -120,8 +140,27 @@ func (t *Transport) storeBody(ctx context.Context, rc io.ReadCloser) (io.ReadClo
 		return nil, types.SizedRef{}, err
 	}
 	b = b[:n]
+	if len(b) < peekSize {
+		// TODO: bake this into CAS itself
 
-	// stream is not empty - store it
+		// check if its already a EOF - in this case we can calculate the hash
+		// and check if blob is already in the store
+
+		n, err = rc.Read(b[len(b):peekSize])
+		b = b[:len(b)+n]
+		if err == io.EOF {
+			ref := types.BytesRef(b)
+			if sz, err := t.s.StatBlob(ctx, ref); err == nil {
+				// blob is in the store - return
+				return ioutil.NopCloser(bytes.NewReader(b)), types.SizedRef{Ref: ref, Size: sz}, nil
+			}
+			// not in the store - continue as usual
+		} else if err != nil {
+			return nil, types.SizedRef{}, err
+		}
+	}
+
+	// stream is not empty or does not exist - store it
 	w, err := t.s.BeginBlob(ctx)
 	if err != nil {
 		return nil, types.SizedRef{}, err
@@ -147,15 +186,8 @@ func (t *Transport) storeBody(ctx context.Context, rc io.ReadCloser) (io.ReadClo
 	return nrc, sr, err
 }
 
-func (t *Transport) storeRequest(req *http.Request) (types.Ref, error) {
+func (t *Transport) storeRequest(req *http.Request, bref types.SizedRef) (types.Ref, error) {
 	ctx := req.Context()
-	// read the body first, because we need to check the trailer
-	body, bref, err := t.storeBody(ctx, req.Body)
-	if err != nil {
-		return types.Ref{}, err
-	}
-	req.Body = body // restore the body
-
 	// store request schema
 	r := &Request{
 		Method:  req.Method,
@@ -232,7 +264,7 @@ func (t *Transport) requestMatches(req *http.Request, obj *Request) bool {
 }
 
 // checkReqCache checks if this request is cached and returns a ref of the response, if any.
-func (t *Transport) checkReqCache(_ types.Ref, req *http.Request) (types.Ref, error) {
+func (t *Transport) checkReqCache(req *http.Request) (*Response, error) {
 	// in fact, we cannot use request ref because it might contain additional headers
 	// instead, we will check all request object and match them according to our rules
 	ctx := req.Context()
@@ -243,11 +275,11 @@ func (t *Transport) checkReqCache(_ types.Ref, req *http.Request) (types.Ref, er
 	for it.Next() {
 		obj, err := it.Decode()
 		if err != nil {
-			return types.Ref{}, err
+			return nil, err
 		}
 		r, ok := obj.(*Request)
 		if !ok {
-			return types.Ref{}, fmt.Errorf("unexpected type: %T", obj)
+			return nil, fmt.Errorf("unexpected type: %T", obj)
 		}
 		if t.requestMatches(req, r) {
 			// it's not enough to match it, it should also have a response
@@ -258,10 +290,21 @@ func (t *Transport) checkReqCache(_ types.Ref, req *http.Request) (types.Ref, er
 			} else if respRef.Zero() {
 				continue
 			}
-			return respRef, nil
+			// and response should exist
+			obj, err := t.s.DecodeSchema(ctx, respRef)
+			if err == schema.ErrNotSchema || err == storage.ErrNotFound {
+				continue
+			} else if err != nil {
+				return nil, fmt.Errorf("failed to decode response: %v", err)
+			}
+			resp, ok := obj.(*Response)
+			if !ok {
+				continue
+			}
+			return resp, nil
 		}
 	}
-	return types.Ref{}, last
+	return nil, last
 }
 
 func (t *Transport) findResponseFor(ctx context.Context, req types.Ref) (types.Ref, error) {
@@ -303,19 +346,11 @@ func (t *Transport) reconstruct(ctx context.Context, r *Response) (*http.Respons
 	return resp, nil
 }
 
-func (t *Transport) serveFromCache(ref types.Ref, req *http.Request) (*http.Response, error) {
+func (t *Transport) serveFromCache(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-	respRef, err := t.checkReqCache(ref, req)
-	if err != nil || respRef.Zero() {
+	resp, err := t.checkReqCache(req)
+	if err != nil || resp == nil {
 		return nil, err
 	}
-	obj, err := t.s.DecodeSchema(ctx, respRef)
-	if err != nil {
-		return nil, err
-	}
-	r, ok := obj.(*Response)
-	if !ok {
-		return nil, fmt.Errorf("unexpected type: %T", obj)
-	}
-	return t.reconstruct(ctx, r)
+	return t.reconstruct(ctx, resp)
 }
