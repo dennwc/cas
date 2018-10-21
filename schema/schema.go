@@ -152,7 +152,9 @@ func IsSchema(p []byte) bool {
 func checkSchema(r io.Reader) (io.Reader, error) {
 	m := make([]byte, MagicSize)
 	_, err := io.ReadFull(r, m)
-	if err != nil {
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		return nil, ErrNotSchema
+	} else if err != nil {
 		return nil, fmt.Errorf("cannot check schema object: %v", err)
 	}
 	if !IsSchema(m) {
