@@ -114,4 +114,18 @@ func init() {
 	dataInCmd.Flags().BoolP("count", "c", false, "count blobs and size without listing blobs")
 	dataInCmd.Flags().IntP("limit", "n", 0, "limit the number of blobs")
 	cmd.AddCommand(dataInCmd)
+
+	reindexCmd := &cobra.Command{
+		Use:   "reindex",
+		Short: "list all data blob(s) in a specified schema blob",
+		RunE: casOpenCmd(func(ctx context.Context, st *cas.Storage, flags *pflag.FlagSet, args []string) error {
+			if len(args) != 0 {
+				return fmt.Errorf("unexpected argument")
+			}
+			force, _ := flags.GetBool("force")
+			return st.ReindexSchema(ctx, force)
+		}),
+	}
+	reindexCmd.Flags().BoolP("force", "f", false, "force reindexing")
+	cmd.AddCommand(reindexCmd)
 }
