@@ -3,7 +3,6 @@
 package local
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/dennwc/ioctl"
 	"golang.org/x/sys/unix"
 
-	"github.com/dennwc/cas/cow"
 	"github.com/dennwc/cas/types"
 )
 
@@ -46,41 +44,6 @@ func (s *Storage) close() error {
 		s.blobDir.Close()
 	}
 	return nil
-}
-
-func (s *Storage) importFile(ctx context.Context, path string) (types.SizedRef, error) {
-	// first, use CoW to copy blocks to a temp file
-	f, err := s.tmpFileRaw()
-	if err != nil {
-		return types.SizedRef{}, err
-	}
-	f.Close()
-	name := f.Name()
-	if err = cow.Clone(ctx, name, path); err != nil {
-		os.Remove(name)
-		return types.SizedRef{}, err
-	}
-	// calculate the hash and move the file into the blobs directory
-	if err := os.Chmod(name, roPerm); err != nil {
-		os.Remove(name)
-		return types.SizedRef{}, err
-	}
-	f, err = os.Open(name)
-	if err != nil {
-		os.Remove(name)
-		return types.SizedRef{}, err
-	}
-	sr, err := types.Hash(f)
-	f.Close()
-	if err != nil {
-		os.Remove(name)
-		return types.SizedRef{}, err
-	}
-	if err = os.Rename(name, s.blobPath(sr.Ref)); err != nil {
-		os.Remove(name)
-		return types.SizedRef{}, err
-	}
-	return sr, nil
 }
 
 func (s *Storage) tmpFile(rw bool) (tempFile, error) {
