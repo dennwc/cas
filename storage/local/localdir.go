@@ -2,13 +2,14 @@ package local
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
-	"github.com/dennwc/cas/cow"
 	"github.com/dennwc/cas/schema"
 	"github.com/dennwc/cas/storage"
 	"github.com/dennwc/cas/types"
@@ -24,6 +25,10 @@ const (
 	xattrSchemaType = xattrNS + "schema.type"
 
 	roPerm = 0444
+)
+
+var (
+	errCantClone = errors.New("copy-on-write not supported")
 )
 
 var (
@@ -80,18 +85,42 @@ func New(dir string, create bool) (*Storage, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Storage{dir: dir}, nil
+	s := &Storage{dir: dir}
+	if err := s.init(); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 type Storage struct {
 	dir string
+	storageImpl
 }
 
-func (s *Storage) Close() error { return nil }
+func (s *Storage) Close() error {
+	return s.close()
+}
 
-func (s *Storage) tmpFile() (*os.File, error) {
+type tempFile interface {
+	io.Writer
+	io.Reader
+	io.Closer
+	File() *os.File
+	SetWriteDeadline(t time.Time) error
+	Commit(ref types.Ref) error
+}
+
+func (s *Storage) tmpFileRaw() (*os.File, error) {
 	dir := filepath.Join(s.dir, dirTmp)
 	return ioutil.TempFile(dir, "blob_")
+}
+
+func (s *Storage) tmpFileGen() (tempFile, error) {
+	f, err := s.tmpFileRaw()
+	if err != nil {
+		return nil, err
+	}
+	return &genTmpFile{s: s, f: f}, nil
 }
 
 func (s *Storage) blobPath(ref types.Ref) string {
@@ -161,42 +190,44 @@ func (s *Storage) FetchBlob(ctx context.Context, ref types.Ref) (io.ReadCloser, 
 }
 
 func (s *Storage) ImportFile(ctx context.Context, path string) (types.SizedRef, error) {
-	// first, use CoW to copy the file into temp directory
-	f, err := s.tmpFile()
+	if !cloneSupported {
+		return types.SizedRef{}, errCantClone
+	}
+	inp, err := os.Open(path)
 	if err != nil {
 		return types.SizedRef{}, err
 	}
-	f.Close()
-	name := f.Name()
-	if err = cow.Clone(ctx, name, path); err != nil {
-		os.Remove(name)
-		return types.SizedRef{}, err
-	}
-	// calculate the hash and move the file into the blobs directory
-	if err := os.Chmod(name, roPerm); err != nil {
-		os.Remove(name)
-		return types.SizedRef{}, err
-	}
-	f, err = os.Open(name)
+	defer inp.Close()
+
+	dst, err := s.tmpFile(true)
 	if err != nil {
-		os.Remove(name)
 		return types.SizedRef{}, err
 	}
-	sr, err := types.Hash(f)
-	f.Close()
+
+	// copy the blocks directly by cloning the file
+	err = cloneFile(dst.File(), inp)
 	if err != nil {
-		os.Remove(name)
+		dst.Close()
 		return types.SizedRef{}, err
 	}
-	if err = os.Rename(name, s.blobPath(sr.Ref)); err != nil {
-		os.Remove(name)
+	// get the hash of the file by reading the clone (snapshot)
+	sr, err := types.Hash(dst)
+	if err != nil {
+		dst.Close()
+		return types.SizedRef{}, err
+	}
+
+	// store the file
+	err = dst.Commit(sr.Ref)
+	if err != nil {
+		dst.Close()
 		return types.SizedRef{}, err
 	}
 	return sr, nil
 }
 
 func (s *Storage) BeginBlob(ctx context.Context) (storage.BlobWriter, error) {
-	f, err := s.tmpFile()
+	f, err := s.tmpFile(false)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +240,7 @@ func (s *Storage) BeginBlob(ctx context.Context) (storage.BlobWriter, error) {
 type blobWriter struct {
 	s   *Storage
 	ctx context.Context
-	f   *os.File
+	f   tempFile
 	sr  types.SizedRef
 	hw  storage.BlobWriter
 }
@@ -238,11 +269,6 @@ func (w *blobWriter) Complete() (types.SizedRef, error) {
 		return sr, nil
 	}
 	w.sr = sr
-	err = w.f.Close()
-	if err != nil {
-		os.Remove(w.f.Name())
-		w.f = nil
-	}
 	return sr, err
 }
 
@@ -253,8 +279,7 @@ func (w *blobWriter) Close() error {
 	if w.f == nil {
 		return nil
 	}
-	w.f.Close()
-	err := os.Remove(w.f.Name())
+	err := w.f.Close()
 	w.f = nil
 	return err
 }
@@ -272,18 +297,9 @@ func (w *blobWriter) Commit() error {
 		}
 	}
 	// file already closed, we only need a name now
-	name := w.f.Name()
+	err := w.f.Commit(w.sr.Ref)
 	w.f = nil
-	if err := os.Chmod(name, roPerm); err != nil {
-		os.Remove(name)
-		return err
-	}
-	path := w.s.blobPath(w.sr.Ref)
-	if err := os.Rename(name, path); err != nil {
-		os.Remove(name)
-		return err
-	}
-	return nil
+	return err
 }
 
 func (s *Storage) IterateBlobs(ctx context.Context) storage.Iterator {
@@ -622,4 +638,68 @@ func (it *schemaIterator) Decode() (schema.Object, error) {
 	defer rc.Close()
 
 	return schema.Decode(rc)
+}
+
+type genTmpFile struct {
+	s *Storage
+	f *os.File
+}
+
+func (f *genTmpFile) File() *os.File {
+	return f.f
+}
+
+func (f *genTmpFile) Write(p []byte) (int, error) {
+	if f.f == nil {
+		return 0, os.ErrClosed
+	}
+	return f.f.Write(p)
+}
+
+func (f *genTmpFile) Read(p []byte) (int, error) {
+	if f.f == nil {
+		return 0, os.ErrClosed
+	}
+	return f.f.Read(p)
+}
+
+func (f *genTmpFile) Close() error {
+	if f.f == nil {
+		return nil
+	}
+	f.f.Close()
+	os.Remove(f.f.Name())
+	f.f = nil
+	return nil
+}
+
+func (f *genTmpFile) SetWriteDeadline(t time.Time) error {
+	if f.f == nil {
+		return os.ErrClosed
+	}
+	return f.f.SetWriteDeadline(t)
+}
+
+func (f *genTmpFile) Commit(ref types.Ref) error {
+	if f.f == nil {
+		return os.ErrClosed
+	}
+	err := f.f.Close()
+	name := f.f.Name()
+	if err != nil {
+		os.Remove(name)
+		f.f = nil
+		return err
+	}
+	f.f = nil
+	if err := os.Chmod(name, roPerm); err != nil {
+		os.Remove(name)
+		return err
+	}
+	path := f.s.blobPath(ref)
+	if err := os.Rename(name, path); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return nil
 }
