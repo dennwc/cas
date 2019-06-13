@@ -100,6 +100,23 @@ func NewRef() Ref {
 	return Ref{name: DefaultHash}
 }
 
+// MakeRef creates a ref with a specified hash algorithm and value.
+func MakeRef(name string, data []byte) (Ref, error) {
+	sz := 0
+	switch name {
+	case hashSha256Name:
+		sz = sha256.Size
+	default:
+		return Ref{}, fmt.Errorf("unsupported ref type: %q", name)
+	}
+	if sz != len(data) {
+		return Ref{}, fmt.Errorf("wrong size for %s ref: expected %d, got %d", name, sz, len(data))
+	}
+	r := Ref{name: name}
+	copy(r.data[:], data)
+	return r, nil
+}
+
 // BytesRef computes a Ref for a byte slice p.
 func BytesRef(p []byte) Ref {
 	ref := NewRef()
@@ -237,6 +254,12 @@ func (r Ref) GoString() string {
 // Name returns the name of the hash function used in this ref.
 func (r Ref) Name() string {
 	return r.name
+}
+
+// Data returns the hash value of this ref.
+func (r Ref) Data() []byte {
+	d := r.data
+	return d[:]
 }
 
 // Hash initializes a new hash to populate the ref.
