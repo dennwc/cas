@@ -2,20 +2,18 @@
 
 ## Installation
 
-CAS requires Go 1.10+ to build. For Ubuntu, you can install Go via Snap:
+CAS requires Go 1.18+ to build. For Ubuntu, you can install Go via Snap:
 ```
 snap install --classic go
 ```
 
-Pull the Go CAS package:
+Install the CAS binary:
 ```
-go get -u github.com/dennwc/cas
+go install github.com/dennwc/cas/cmd/cas@latest
 ```
 
-And install the CAS binary:
-```
-go install github.com/dennwc/cas/cmd/cas
-```
+It will compile the latest binary and will install it to `GOBIN` (usually `~/go/bin/`).
+You may need to add this directory to `PATH` for `cas` command to be available from the shell.
 
 ## Hashing files
 
@@ -224,7 +222,7 @@ a number of lines in a file. To do this, we need to install a line count
 module:
 
 ```
-go install github.com/dennwc/cas/cmd/cas-pipe-lines
+go install github.com/dennwc/cas/cmd/cas-pipe-lines@latest
 ```
 
 CAS will accept any binary that is installed in `PATH` and starts with
