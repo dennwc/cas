@@ -10,7 +10,8 @@ For more details, see [concepts](./docs/concepts.md) and [comparison](./docs/com
 
 ## Status
 
-The project is in an active development. Both API and on-disk format may change.
+The project is stable, and further work is ongoing on designing CAS2 - more flexible and performant version.
+This project will receive bug fixed and maintenance work. New features will likely end up in CAS2.
 
 Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands.
 
@@ -62,7 +63,7 @@ Check the [Quick start guide](./docs/quickstart.md) for a list of basic commands
     - Caches results
     - Incremental
 
-**Planned:**
+**Planned (for CAS2):**
 
 - Support for large multipart files (> TB)
     - Support multilevel parts
