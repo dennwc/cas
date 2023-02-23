@@ -1,5 +1,8 @@
 # Content Addressable Storage
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/dennwc/cas.svg)](https://pkg.go.dev/github.com/dennwc/cas)
+[![Join the chat at https://app.gitter.im/#/room/#dennwc_cas:gitter.im](https://badges.gitter.im/dennwc/cas.svg)](https://app.gitter.im/#/room/#dennwc_cas:gitter.im)
+
 This project implements a simple and pragmatic approach to Content Addressable Storage (CAS).
 It was heavily influenced by [Perkeep](https://perkeep.org/) (aka Camlistore) and Git.
 
