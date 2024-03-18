@@ -2,6 +2,7 @@ package cas
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -53,6 +54,9 @@ func NewWebContent(req *http.Request, resp *http.Response) *schema.WebContent {
 }
 
 func (s *Storage) storeWebContentSchema(ctx context.Context, sr SizedRef, req *http.Request, resp *http.Response) (SizedRef, error) {
+	if sr.Ref.Zero() {
+		return types.SizedRef{}, errors.New("empty ref received")
+	}
 	m := NewWebContent(req, resp)
 	m.Ref, m.Size = sr.Ref, sr.Size
 	return s.StoreSchema(ctx, m)

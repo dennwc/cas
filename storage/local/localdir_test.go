@@ -1,7 +1,6 @@
 package local
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 
 func TestLocalDir(t *testing.T) {
 	storagetest.RunTests(t, func(t testing.TB) (storage.Storage, func()) {
-		dir, err := ioutil.TempDir("", "cas_local_")
+		dir, err := os.MkdirTemp("", "cas_local_")
 		require.NoError(t, err)
 		cleanup := func() {
 			os.RemoveAll(dir)

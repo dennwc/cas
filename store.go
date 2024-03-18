@@ -89,6 +89,9 @@ func (s *Storage) StoreBlob(ctx context.Context, r io.Reader, conf *StoreConfig)
 		return SizedRef{}, err
 	}
 	sr, err := s.completeBlob(ctx, w, conf.Expect.Ref)
+	if err != nil {
+		return SizedRef{}, err
+	}
 	if err = conf.checkRef(sr); err != nil {
 		return SizedRef{}, err
 	}
@@ -113,10 +116,7 @@ func (s *Storage) completeBlob(ctx context.Context, w storage.BlobWriter, exp Re
 		return SizedRef{Ref: exp, Size: 0}, nil
 	}
 	err = w.Commit()
-	if err != nil {
-		return SizedRef{}, err
-	}
-	return sr, nil
+	return sr, err
 }
 
 // splitBlob stores blob while splitting it according to config.

@@ -1,4 +1,5 @@
-//+build linux
+//go:build linux
+// +build linux
 
 package local
 
@@ -26,7 +27,11 @@ func cloneFile(dst, src *os.File) error {
 }
 
 func linkFile(dir *os.File, name string, file *os.File) error {
-	return unix.Linkat(unix.AT_FDCWD, file.Name(), int(dir.Fd()), name, unix.AT_SYMLINK_FOLLOW)
+	err := unix.Linkat(unix.AT_FDCWD, file.Name(), int(dir.Fd()), name, unix.AT_SYMLINK_FOLLOW)
+	if e, ok := err.(syscall.Errno); ok && e == syscall.EEXIST {
+		return os.ErrExist
+	}
+	return err
 }
 
 var noTmpFile int32
@@ -138,8 +143,10 @@ func (f *linuxTmpFile) Commit(ref types.Ref) error {
 	}
 
 	err = linkFile(f.s.blobDir, ref.String(), tmp)
-	if err != nil {
-		return fmt.Errorf("linkat: %v", err)
+	if os.IsExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("linkat: %v (%T)", err, err)
 	}
 	err = f.s.addNotIndexed(tmp, ref)
 	if err != nil {
